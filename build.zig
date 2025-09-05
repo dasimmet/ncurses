@@ -132,6 +132,7 @@ pub fn runMkdefs(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) s
         .name = "mkncurses_def",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/mkncurses_def.zig"),
+            .target = b.graph.host,
         }),
     });
     const run = b.addRunArtifact(mkncurses_def);
