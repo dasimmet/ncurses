@@ -147,6 +147,42 @@ pub fn build(b: *std.Build) void {
         .root_module = modncurses,
     });
     b.installArtifact(libncurses);
+
+    {
+        const mkterm_h = b.addConfigHeader(.{
+            .style = .{
+                .autoconf_at = ncurses.path("include/MKterm.h.awk.in"),
+            },
+            .include_path = "MKterm.h.awk",
+        }, .{
+            .NCURSES_MAJOR = ncurses_version.major,
+            .NCURSES_MINOR = ncurses_version.minor,
+            .HAVE_TERMIO_H = 1,
+            .HAVE_TERMIOS_H = 1,
+            .NCURSES_TPARM_VARARGS = 1,
+            .BROKEN_LINKER = 0,
+            .cf_cv_enable_reentrant = 0,
+            .HAVE_TCGETATTR = 1,
+            .NCURSES_SBOOL = "char",
+            .NCURSES_EXT_COLORS = 0,
+            .EXP_WIN32_DRIVER = 0,
+            .NCURSES_XNAMES = 1,
+            .NCURSES_USE_TERMCAP = 0,
+            .NCURSES_USE_DATABASE = 1,
+            .NCURSES_CONST = "const",
+            .NCURSES_PATCH = ncurses_version.patch_str,
+            .NCURSES_SP_FUNCS = 1,
+        });
+        const term_h = b.addSystemCommand(&.{
+            "awk", "-f",
+        });
+        term_h.addFileArg(mkterm_h.getOutput());
+        term_h.addFileArg(ncurses.path("include/Caps"));
+        term_h.addFileArg(ncurses.path("include/Caps-ncurses"));
+        const update_term_h = b.addUpdateSourceFiles();
+        update_term_h.addCopyFileToSource(term_h.captureStdOut(), "src/term.h");
+        b.step("update_term_h", "update term_h").dependOn(&update_term_h.step);
+    }
 }
 
 pub fn run_mkncurses_def(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
