@@ -64,10 +64,14 @@ pub fn main() !void {
                     offset += field.len;
                 },
                 1 => {
-                    value = line[offset..][std.mem.indexOf(u8, line[offset..], field).?..];
+                    value = std.mem.trim(
+                        u8,
+                        line[field_iter.index..],
+                        "\n\t\r ",
+                    );
                     break;
                 },
-                else => {},
+                else => unreachable,
             }
         }
         // std.log.debug("key:'{s}', value:'{s}'", .{key, value});
@@ -79,4 +83,11 @@ pub fn main() !void {
         try writer.writeAll(value);
         try writer.writeAll("\n#endif\n\n");
     }
+
+    try writer.writeAll(
+        \\
+        \\#endif /* NC_DEFINE_H */
+        \\
+        \\
+    );
 }

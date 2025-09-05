@@ -1,5 +1,12 @@
 const std = @import("std");
 
+pub const ncurses_version = struct {
+    pub const major = 6;
+    pub const minor = 4;
+    pub const patch_str = "20230311";
+    pub const mouse = 2;
+};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -106,8 +113,70 @@ pub fn build(b: *std.Build) void {
     });
     modncurses.addIncludePath(config_h.getOutputDir());
 
-    const defs_h = runMkdefs(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
+    const curses_tmp_h = b.addConfigHeader(.{
+        .include_path = "curses_tmp.h",
+        .style = .{ .autoconf_at = ncurses.path("include/curses.h.in") },
+    }, .{
+        .NCURSES_MAJOR = ncurses_version.major,
+        .NCURSES_MINOR = ncurses_version.minor,
+        .NCURSES_PATCH = ncurses_version.patch_str,
+        .NCURSES_MOUSE_VERSION = ncurses_version.mouse,
+
+        .HAVE_STDINT_H = 1,
+        .HAVE_STDNORETURN_H = 0,
+        .NCURSES_CONST = "const",
+        .NCURSES_INLINE = "inline",
+        .NCURSES_OPAQUE = 0,
+        .NCURSES_OPAQUE_FORM = 0,
+        .NCURSES_OPAQUE_MENU = 0,
+        .NCURSES_OPAQUE_PANEL = 0,
+        .NCURSES_WATTR_MACROS = 0,
+        .cf_cv_enable_reentrant = 0,
+        .BROKEN_LINKER = 0,
+        .NCURSES_INTEROP_FUNCS = 1,
+        .NCURSES_SIZE_T = "short",
+        .NCURSES_TPARM_VARARGS = 1,
+        .NCURSES_TPARM_ARG = "intptr_t",
+        .NCURSES_WCWIDTH_GRAPHICS = 1,
+        .NCURSES_CH_T = "chtype",
+        .cf_cv_enable_lp64 = 1,
+        .cf_cv_header_stdbool_h = 1,
+        .cf_cv_typeof_chtype = "uint32_t",
+        .cf_cv_typeof_mmask_t = "uint32_t",
+        .cf_cv_type_of_bool = "unsigned char",
+        .USE_CXX_BOOL = "defined(__cplusplus)",
+        .NCURSES_EXT_FUNCS = 1,
+        .NCURSES_LIBUTF8 = 0,
+        .NEED_WCHAR_H = 0,
+        .NCURSES_WCHAR_T = 0,
+        .NCURSES_OK_WCHAR_T = "",
+        .NCURSES_WINT_T = 0,
+        .NCURSES_EXT_COLORS = 0,
+        .cf_cv_1UL = "1U",
+        .GENERATED_EXT_FUNCS = "generated",
+        .HAVE_VSSCANF = 1,
+        .NCURSES_CCHARW_MAX = 5,
+        .NCURSES_SP_FUNCS = 1,
+    });
+    const defs_h = run_mkncurses_def(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
     modncurses.addIncludePath(defs_h.dirname());
+
+    const curses_h = run_concat_lp(b, &.{
+        curses_tmp_h.getOutput(),
+        run_mkkey_defs(b, &.{
+            ncurses.path("include/Caps"),
+            ncurses.path("include/Caps-ncurses"),
+        }, "key_defs_tmp.h"),
+        ncurses.path("include/curses.tail"),
+    }, "curses.h");
+    modncurses.addIncludePath(curses_h.dirname());
+
+    b.step("keydefs", "").dependOn(
+        &b.addInstallFile(run_mkkey_defs(b, &.{
+            ncurses.path("include/Caps"),
+            ncurses.path("include/Caps-ncurses"),
+        }, "key_defs_tmp.h"), "key_defs.h").step,
+    );
 
     modncurses.addIncludePath(ncurses.path("include"));
     modncurses.addIncludePath(ncurses.path("ncurses"));
@@ -127,15 +196,47 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(libncurses);
 }
 
-pub fn runMkdefs(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
-    const mkncurses_def = b.addExecutable(.{
+pub fn run_mkncurses_def(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+    const exe = b.addExecutable(.{
         .name = "mkncurses_def",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/mkncurses_def.zig"),
             .target = b.graph.host,
         }),
     });
-    const run = b.addRunArtifact(mkncurses_def);
+    const run = b.addRunArtifact(exe);
     run.addFileArg(src);
     return run.addOutputFileArg(basename);
+}
+
+pub fn run_mkkey_defs(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+    const exe = b.addExecutable(.{
+        .name = "mkkey_defs",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/mkkey_defs.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+    const out = run.addOutputFileArg(basename);
+    for (src) |s| {
+        run.addFileArg(s);
+    }
+    return out;
+}
+
+pub fn run_concat_lp(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+    const exe = b.addExecutable(.{
+        .name = "concat_lp",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concat_lp.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+    const out = run.addOutputFileArg(basename);
+    for (src) |s| {
+        run.addFileArg(s);
+    }
+    return out;
 }
