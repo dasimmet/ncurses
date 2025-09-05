@@ -92,7 +92,7 @@ pub fn main() !void {
             try writer.writeAll(" ");
             try writer.writeAll(std.fs.path.basename(inpath));
         }
-        try writer.print("\n* cap_count: {}\n*/", .{caps.items.len});
+        try writer.print("\n* cap_count: {}\n*/\n", .{caps.items.len});
     }
 }
 

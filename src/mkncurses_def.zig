@@ -57,7 +57,11 @@ pub fn main() !void {
         var value: []const u8 = "0";
         var field_num: usize = 0;
         var offset: usize = 0;
-        while (field_iter.next()) |field| : (field_num += 1) {
+        var last_index: usize = 0;
+        while (field_iter.next()) |field| : ({
+            field_num += 1;
+            last_index = field_iter.index;
+        }) {
             switch (field_num) {
                 0 => {
                     key = field;
@@ -66,7 +70,7 @@ pub fn main() !void {
                 1 => {
                     value = std.mem.trim(
                         u8,
-                        line[field_iter.index..],
+                        line[last_index..],
                         "\n\t\r ",
                     );
                     break;
