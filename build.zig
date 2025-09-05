@@ -93,7 +93,7 @@ pub fn build(b: *std.Build) void {
         }, .{
             .NCURSES_MAJOR = ncurses_version.major,
             .NCURSES_MINOR = ncurses_version.minor,
-            .NCURSES_SP_FUNCS = 1,
+            .NCURSES_SP_FUNCS = 20230311,
         });
         modncurses.addIncludePath(unctrl_h.getOutputDir());
         libncurses.installConfigHeader(unctrl_h);
@@ -168,7 +168,7 @@ pub fn build(b: *std.Build) void {
         .GENERATED_EXT_FUNCS = "generated",
         .HAVE_VSSCANF = 1,
         .NCURSES_CCHARW_MAX = 5,
-        .NCURSES_SP_FUNCS = 1,
+        .NCURSES_SP_FUNCS = 20230311,
     });
 
     const curses_h = run_concat_lp(b, &.{
@@ -209,9 +209,27 @@ pub fn build(b: *std.Build) void {
                 "cursslk.cc",
                 "demo.cc",
             },
+            .flags = Sources.flags,
+        });
+        demo.addCSourceFiles(.{
+            .root = ncurses.path("test"),
+            .files = &.{
+                // "demo_altkeys.c",
+                // "demo_defkey.c",
+                // "demo_forms.c",
+                // "demo_keyok.c",
+                // "demo_menus.c",
+                // "demo_new_pair.c",
+                // "demo_panels.c",
+                // "demo_tabs.c",
+                // "demo_termcap.c",
+                // "demo_terminfo.c",
+            },
+            .flags = Sources.flags,
         });
         demo.linkLibCpp();
         demo.linkLibrary(libncurses);
+        demo.addIncludePath(ncurses.path("test"));
         demo.addIncludePath(ncurses.path("c++"));
         demo.addIncludePath(ncurses_cfg_h.getOutputDir());
         demo.addIncludePath(b.path("src"));
@@ -248,7 +266,7 @@ pub fn build(b: *std.Build) void {
             .NCURSES_USE_DATABASE = 1,
             .NCURSES_CONST = "const",
             .NCURSES_PATCH = ncurses_version.patch_str,
-            .NCURSES_SP_FUNCS = 1,
+            .NCURSES_SP_FUNCS = 20230311,
         });
         const term_h = b.addSystemCommand(&.{
             "awk", "-f",
@@ -462,19 +480,19 @@ pub const Sources = struct {
     pub const progs: Sources = .{
         .dir = "progs",
         .files = &.{
-            "clear.c",
-            "clear_cmd.c",
-            "dump_entry.c",
-            "infocmp.c",
-            "reset_cmd.c",
-            "tabs.c",
-            "tic.c",
-            "toe.c",
-            "tparm_type.c",
-            "tput.c",
-            "transform.c",
-            "tset.c",
-            "tty_settings.c",
+            // "clear.c",
+            // "clear_cmd.c",
+            // "dump_entry.c",
+            // "infocmp.c",
+            // "reset_cmd.c",
+            // "tabs.c",
+            // "tic.c",
+            // "toe.c",
+            // "tparm_type.c",
+            // "tput.c",
+            // "transform.c",
+            // "tset.c",
+            // "tty_settings.c",
         },
     };
 
