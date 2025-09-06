@@ -59,7 +59,7 @@ extern "C" {
 
 typedef struct screen  SCREEN;
 
-#if 1
+#if 20230311
 #undef  NCURSES_SP_FUNCS
 #define NCURSES_SP_FUNCS 20230311
 #undef  NCURSES_SP_NAME

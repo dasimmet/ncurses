@@ -10,6 +10,8 @@ pub const ncurses_version = struct {
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const headers_step = b.step("headers", "install the zig generated headers");
+
     const ncurses = b.dependency("ncurses", .{});
     const modncurses = b.addModule("ncurses", .{
         .target = target,
@@ -25,33 +27,20 @@ pub fn build(b: *std.Build) void {
         modncurses.addIncludePath(ncurses.path(source.dir));
     }
     modncurses.addCSourceFiles(.{
-        .root = ncurses.path("ncurses/tinfo"),
+        .root = b.path("src"),
         .flags = Sources.flags,
-        .files = Sources.tinfo,
+        .files = &.{"comp_userdefs.c"},
     });
-    modncurses.addCSourceFiles(.{
-        .root = ncurses.path("panel"),
-        .flags = Sources.flags,
-        .files = Sources.panel,
-    });
+
     modncurses.addIncludePath(ncurses.path("include"));
-    modncurses.addIncludePath(ncurses.path("ncurses"));
-    modncurses.addIncludePath(ncurses.path("menu"));
-    modncurses.addIncludePath(ncurses.path("panel"));
-    modncurses.addIncludePath(ncurses.path("ncurses/base"));
-    modncurses.addIncludePath(ncurses.path("ncurses"));
     modncurses.addCMacro("BUILDING_NCURSES", "");
     modncurses.addCMacro("_DEFAULT_SOURCE", "");
     modncurses.addCMacro("_XOPEN_SOURCE", "600");
     modncurses.addCMacro("NDEBUG", "");
-    modncurses.addCMacro("TRACE", "");
+    // modncurses.addCMacro("TRACE", "");
     modncurses.addCMacro("NCURSES_STATIC", "");
-    modncurses.addCMacro("SIG_ATOMIC_T", "volatile sig_atomic_t");
 
-    const libncurses = b.addLibrary(.{
-        .name = "ncurses",
-        .root_module = modncurses,
-    });
+    const libncurses = b.addLibrary(.{ .name = "ncurses", .root_module = modncurses });
     libncurses.installLibraryHeaders(libncurses);
     inline for (&.{
         "include",
@@ -61,6 +50,16 @@ pub fn build(b: *std.Build) void {
     }) |dir| {
         libncurses.installHeadersDirectory(ncurses.path(dir), "", .{});
     }
+
+    inline for (&.{
+        // .{ "menu/mf_common.h", "mf_common.h" },
+        // .{ "menu/eti.h", "eti.h" },
+        // .{ "menu/menu.h", "menu.h" },
+        // .{ "panel/panel.h", "panel.h" },
+    }) |header| {
+        libncurses.installHeader(ncurses.path(header[0]), header[1]);
+    }
+
     b.installArtifact(libncurses);
 
     const dll_h = b.addConfigHeader(.{
@@ -73,35 +72,41 @@ pub fn build(b: *std.Build) void {
     libncurses.installConfigHeader(dll_h);
 
     modncurses.addIncludePath(b.path("src"));
+    libncurses.installHeadersDirectory(b.path("src"), "", .{});
 
-    const ncurses_cfg_h = b.addConfigHeader(.{
-        .include_path = "ncurses_cfg.h",
-        .style = .{ .autoconf_at = ncurses.path("include/ncurses_cfg.hin") },
-    }, .{
-        .DEFS = "#include <ncurses_zig_defs.h>",
-    });
-    modncurses.addIncludePath(ncurses_cfg_h.getOutputDir());
+    const ncurses_zig_defs = b.addConfigHeader(.{
+        .style = .blank,
+        .include_path = "ncurses_zig_defs.h",
+    }, ZIG_DEFS);
 
-    b.step("ncurses_cfg", "").dependOn(
-        &b.addInstallFile(ncurses_cfg_h.getOutput(), "ncurses_cfg.h").step,
+    const ncurses_cfg_h = runConfigHeaderLazyPath(
+        b,
+        ncurses.path("include/ncurses_cfg.hin"),
+        "ncurses_cfg.h",
+        .{
+            .@"@DEFS@" = ncurses_zig_defs.getOutputFile(),
+        },
+    );
+    modncurses.addIncludePath(ncurses_cfg_h.dirname());
+    libncurses.installHeader(ncurses_cfg_h, "ncurses_cfg.h");
+    headers_step.dependOn(
+        &b.addInstallFile(ncurses_cfg_h, "include/ncurses_cfg.h").step,
     );
 
-    {
-        const unctrl_h = b.addConfigHeader(.{
-            .include_path = "unctrl.h",
-            .style = .{ .autoconf_at = ncurses.path("include/unctrl.h.in") },
-        }, .{
-            .NCURSES_MAJOR = ncurses_version.major,
-            .NCURSES_MINOR = ncurses_version.minor,
-            .NCURSES_SP_FUNCS = 20230311,
-        });
-        modncurses.addIncludePath(unctrl_h.getOutputDir());
-        libncurses.installConfigHeader(unctrl_h);
+    const unctrl_h = b.addConfigHeader(.{
+        .include_path = "unctrl.h",
+        .style = .{ .autoconf_at = ncurses.path("include/unctrl.h.in") },
+    }, .{
+        .NCURSES_MAJOR = ncurses_version.major,
+        .NCURSES_MINOR = ncurses_version.minor,
+        .NCURSES_SP_FUNCS = 20230311,
+    });
+    modncurses.addIncludePath(unctrl_h.getOutputDir());
+    libncurses.installConfigHeader(unctrl_h);
 
-        b.step("unctrl_h", "").dependOn(
-            &b.addInstallFile(unctrl_h.getOutput(), "unctrl_h.h").step,
-        );
-    }
+    headers_step.dependOn(
+        &b.addInstallFile(unctrl_h.getOutput(), "include/unctrl.h").step,
+    );
 
     {
         const termcap_h = b.addConfigHeader(.{
@@ -115,14 +120,14 @@ pub fn build(b: *std.Build) void {
         modncurses.addIncludePath(termcap_h.getOutputDir());
         libncurses.installConfigHeader(termcap_h);
 
-        b.step("termcap_h", "").dependOn(
-            &b.addInstallFile(termcap_h.getOutput(), "termcap.h").step,
+        headers_step.dependOn(
+            &b.addInstallFile(termcap_h.getOutput(), "include/termcap.h").step,
         );
     }
 
-    const defs_h = run_mkncurses_def(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
+    const defs_h = runMakeNCursesDef(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
     modncurses.addIncludePath(defs_h.dirname());
-    b.step("ncdefs", "install ncurses_def.h").dependOn(&b.addInstallFile(defs_h, "ncurses_def.h").step);
+    headers_step.dependOn(&b.addInstallFile(defs_h, "include/ncurses_def.h").step);
     libncurses.installHeader(defs_h, "ncurses_def.h");
 
     const curses_tmp_h = b.addConfigHeader(.{
@@ -163,7 +168,7 @@ pub fn build(b: *std.Build) void {
         .NCURSES_WCHAR_T = 0,
         .NCURSES_OK_WCHAR_T = "",
         .NCURSES_WINT_T = 0,
-        .NCURSES_EXT_COLORS = 0,
+        .NCURSES_EXT_COLORS = 20230311,
         .cf_cv_1UL = "1U",
         .GENERATED_EXT_FUNCS = "generated",
         .HAVE_VSSCANF = 1,
@@ -171,20 +176,43 @@ pub fn build(b: *std.Build) void {
         .NCURSES_SP_FUNCS = 20230311,
     });
 
-    const curses_h = run_concat_lp(b, &.{
+    const curses_h = runConcatLazyPath(b, &.{
         curses_tmp_h.getOutput(),
-        run_mkkey_defs(b, &.{
+        runMakeKeyDefs(b, &.{
             ncurses.path("include/Caps"),
             ncurses.path("include/Caps-ncurses"),
         }, "key_defs_tmp.h"),
         ncurses.path("include/curses.tail"),
     }, "curses.h");
+    headers_step.dependOn(
+        &b.addInstallFile(curses_h, "include/curses.h").step,
+    );
     modncurses.addIncludePath(curses_h.dirname());
     libncurses.installHeader(curses_h, "curses.h");
 
-    b.step("curses_h", "").dependOn(
-        &b.addInstallFile(curses_h, "curses.h").step,
-    );
+    const libwidechar = b.addLibrary(.{
+        .name = "widechar",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    libwidechar.addCSourceFiles(.{
+        .root = ncurses.path(Sources.widechar.dir),
+        .files = Sources.widechar.files,
+        .flags = Sources.flags,
+    });
+    libwidechar.linkLibC();
+    libwidechar.addIncludePath(ncurses.path("ncurses"));
+    libwidechar.addIncludePath(ncurses.path("include"));
+    libwidechar.addIncludePath(b.path("src"));
+    libwidechar.addIncludePath(ncurses.path("ncurses/term"));
+    libwidechar.addIncludePath(dll_h.getOutputDir());
+    libwidechar.addIncludePath(ncurses_cfg_h.dirname());
+    libwidechar.addIncludePath(defs_h.dirname());
+    libwidechar.addIncludePath(curses_h.dirname());
+    libwidechar.addIncludePath(unctrl_h.getOutputDir());
+    modncurses.linkLibrary(libwidechar);
 
     // -DHAVE_CONFIG_H -DBUILDING_NCURSES -I../ncurses -I. -I../include -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DNDEBUG -O2 -Qunused-arguments -Wno-error=implicit-function-declaration  -DNCURSES_STATIC -g -DTRACE
 
@@ -201,7 +229,7 @@ pub fn build(b: *std.Build) void {
             .files = &.{
                 "cursesapp.cc",
                 "cursesf.cc",
-                // "cursesmain.cc",
+                "cursesmain.cc",
                 "cursesm.cc",
                 "cursespad.cc",
                 "cursesp.cc",
@@ -231,10 +259,12 @@ pub fn build(b: *std.Build) void {
         demo.linkLibrary(libncurses);
         demo.addIncludePath(ncurses.path("test"));
         demo.addIncludePath(ncurses.path("c++"));
-        demo.addIncludePath(ncurses_cfg_h.getOutputDir());
-        demo.addIncludePath(b.path("src"));
+        demo.addIncludePath(ncurses_cfg_h.dirname());
         const etip_h = b.addConfigHeader(
-            .{ .style = .{ .autoconf_at = ncurses.path("c++/etip.h.in") } },
+            .{
+                .style = .{ .autoconf_at = ncurses.path("c++/etip.h.in") },
+                .include_path = "etip.h",
+            },
             .{},
         );
         demo.addIncludePath(etip_h.getOutputDir());
@@ -259,7 +289,7 @@ pub fn build(b: *std.Build) void {
             .cf_cv_enable_reentrant = 0,
             .HAVE_TCGETATTR = 1,
             .NCURSES_SBOOL = "char",
-            .NCURSES_EXT_COLORS = 0,
+            .NCURSES_EXT_COLORS = 20230311,
             .EXP_WIN32_DRIVER = 0,
             .NCURSES_XNAMES = 1,
             .NCURSES_USE_TERMCAP = 0,
@@ -293,11 +323,12 @@ pub fn build(b: *std.Build) void {
     }
 }
 
-pub fn run_mkncurses_def(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+/// generates ncurses_def.h from ncurses_defs text file
+pub fn runMakeNCursesDef(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const exe = b.addExecutable(.{
-        .name = "mkncurses_def",
+        .name = "MakeNCursesDef",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/mkncurses_def.zig"),
+            .root_source_file = b.path("src/MakeNCursesDef.zig"),
             .target = b.graph.host,
         }),
     });
@@ -306,11 +337,12 @@ pub fn run_mkncurses_def(b: *std.Build, src: std.Build.LazyPath, basename: []con
     return run.addOutputFileArg(basename);
 }
 
-pub fn run_mkkey_defs(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+/// generates key def headers from ncurses Caps files
+pub fn runMakeKeyDefs(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const exe = b.addExecutable(.{
-        .name = "mkkey_defs",
+        .name = "MakeKeyDefs",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/mkkey_defs.zig"),
+            .root_source_file = b.path("src/MakeKeyDefs.zig"),
             .target = b.graph.host,
         }),
     });
@@ -322,11 +354,12 @@ pub fn run_mkkey_defs(b: *std.Build, src: []const std.Build.LazyPath, basename: 
     return out;
 }
 
-pub fn run_concat_lp(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+/// concatenates a slice of files given in the form of a lazypath
+pub fn runConcatLazyPath(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const exe = b.addExecutable(.{
-        .name = "concat_lp",
+        .name = "ConcatLazyPath",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concat_lp.zig"),
+            .root_source_file = b.path("src/ConcatLazyPath.zig"),
             .target = b.graph.host,
         }),
     });
@@ -334,6 +367,29 @@ pub fn run_concat_lp(b: *std.Build, src: []const std.Build.LazyPath, basename: [
     const out = run.addOutputFileArg(basename);
     for (src) |s| {
         run.addFileArg(s);
+    }
+    return out;
+}
+
+/// replaces keys in a file like configheader, but accepts lazypaths to files as arguments
+/// keys for replacement have no particular syntax
+pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename: []const u8, args: anytype) std.Build.LazyPath {
+    const exe = b.addExecutable(.{
+        .name = "ConfigHeaderLazyPath",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ConfigHeaderLazyPath.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+    run.stdio = .inherit;
+    run.addFileArg(src);
+    const out = run.addOutputFileArg(basename);
+    inline for (comptime std.meta.fields(@TypeOf(args))) |field| {
+        const value = @field(args, field.name);
+        std.debug.assert(@TypeOf(value) == std.Build.LazyPath);
+        run.addArg(field.name);
+        run.addFileArg(value);
     }
     return out;
 }
@@ -342,16 +398,131 @@ pub const Sources = struct {
     dir: []const u8,
     files: []const []const u8,
     pub const all: []const Sources = &.{
-        menu,
+        ncurses,
         base,
+        menu,
+        panel,
         progs,
         form,
         trace,
+        tinfo,
+        tty,
     };
     pub const flags = &.{
         "-Qunused-arguments",
         "-Wno-error=implicit-function-declaration",
     };
+
+    pub const ncurses: Sources = .{
+        .dir = "ncurses",
+        .files = &.{
+            // "codes.c",
+            // "comp_captab.c",
+            // "comp_userdefs.c",
+            // "expanded.c",
+            // "fallback.c",
+            // "lib_gen.c",
+            // "lib_keyname.c",
+            // "link_test.c",
+            // "names.c",
+            // "report_hashing.c",
+            // "report_offsets.c",
+            // "unctrl.c",
+        },
+    };
+
+    pub const base: Sources = .{
+        .dir = "ncurses/base",
+        .files = &.{
+            "define_key.c",
+            "key_defined.c",
+            "keybound.c",
+            "keyok.c",
+            "legacy_coding.c",
+            "lib_addch.c",
+            "lib_addstr.c",
+            "lib_beep.c",
+            "lib_bkgd.c",
+            "lib_box.c",
+            "lib_chgat.c",
+            "lib_clear.c",
+            "lib_clearok.c",
+            "lib_clrbot.c",
+            "lib_clreol.c",
+            "lib_color.c",
+            "lib_colorset.c",
+            "lib_delch.c",
+            "lib_delwin.c",
+            "lib_dft_fgbg.c",
+            "lib_driver.c",
+            "lib_echo.c",
+            "lib_endwin.c",
+            "lib_erase.c",
+            "lib_flash.c",
+            "lib_freeall.c",
+            "lib_getch.c",
+            "lib_getstr.c",
+            "lib_hline.c",
+            "lib_immedok.c",
+            "lib_inchstr.c",
+            "lib_initscr.c",
+            "lib_insch.c",
+            "lib_insdel.c",
+            "lib_insnstr.c",
+            "lib_instr.c",
+            "lib_isendwin.c",
+            "lib_leaveok.c",
+            "lib_mouse.c",
+            "lib_move.c",
+            "lib_mvwin.c",
+            "lib_newterm.c",
+            "lib_newwin.c",
+            "lib_nl.c",
+            "lib_overlay.c",
+            "lib_pad.c",
+            "lib_printw.c",
+            "lib_redrawln.c",
+            "lib_refresh.c",
+            "lib_restart.c",
+            "lib_scanw.c",
+            "lib_screen.c",
+            "lib_scroll.c",
+            "lib_scrollok.c",
+            "lib_scrreg.c",
+            "lib_set_term.c",
+            "lib_slk.c",
+            "lib_slkatr_set.c",
+            "lib_slkatrof.c",
+            "lib_slkatron.c",
+            "lib_slkatrset.c",
+            "lib_slkattr.c",
+            "lib_slkclear.c",
+            "lib_slkcolor.c",
+            "lib_slkinit.c",
+            "lib_slklab.c",
+            "lib_slkrefr.c",
+            "lib_slkset.c",
+            "lib_slktouch.c",
+            "lib_touch.c",
+            "lib_ungetch.c",
+            "lib_vline.c",
+            "lib_wattroff.c",
+            "lib_wattron.c",
+            "lib_winch.c",
+            "lib_window.c",
+            "nc_panel.c",
+            "new_pair.c",
+            "resizeterm.c",
+            "safe_sprintf.c",
+            // "sigaction.c",
+            "tries.c",
+            "use_window.c",
+            "version.c",
+            "vsscanf.c",
+            "wresize.c",
+        },
+    };
+
     pub const menu: Sources = .{
         .dir = "menu",
         .files = &.{
@@ -384,99 +555,28 @@ pub const Sources = struct {
             "m_win.c",
         },
     };
-    pub const panel = &.{
-        "p_above.c",
-        "panel.c",
-        "p_below.c",
-        "p_bottom.c",
-        "p_delete.c",
-        "p_hidden.c",
-        "p_hide.c",
-        "p_move.c",
-        "p_new.c",
-        "p_replace.c",
-        "p_show.c",
-        "p_top.c",
-        "p_update.c",
-        "p_user.c",
-        "p_win.c",
-    };
-    pub const base: Sources = .{
-        .dir = "ncurses/base",
+
+    pub const panel: Sources = .{
+        .dir = "panel",
         .files = &.{
-            "lib_slkatrof.c",
-            "lib_scanw.c",
-            "lib_move.c",
-            "lib_touch.c",
-            "lib_isendwin.c",
-            "lib_slktouch.c",
-            "lib_slkatrset.c",
-            "lib_scrreg.c",
-            "lib_erase.c",
-            "lib_clearok.c",
-            "lib_clear.c",
-            "lib_endwin.c",
-            "lib_delwin.c",
-            "lib_slkatr_set.c",
-            "lib_set_term.c",
-            "lib_initscr.c",
-            "lib_delch.c",
-            "lib_chgat.c",
-            "lib_slkcolor.c",
-            "lib_color.c",
-            "lib_slkset.c",
-            "lib_pad.c",
-            "lib_insdel.c",
-            "lib_insnstr.c",
-            "lib_hline.c",
-            "lib_slkinit.c",
-            "lib_addstr.c",
-            "lib_slk.c",
-            "lib_refresh.c",
-            "lib_printw.c",
-            "lib_beep.c",
-            "lib_getstr.c",
-            "lib_slklab.c",
-            "lib_scrollok.c",
-            "lib_mouse.c",
-            "lib_ungetch.c",
-            "lib_clrbot.c",
-            "lib_freeall.c",
-            "lib_box.c",
-            "lib_winch.c",
-            "lib_overlay.c",
-            "lib_redrawln.c",
-            "lib_slkclear.c",
-            "lib_slkrefr.c",
-            "lib_nl.c",
-            "lib_echo.c",
-            "lib_immedok.c",
-            "lib_flash.c",
-            "lib_colorset.c",
-            "lib_insch.c",
-            "lib_wattroff.c",
-            "lib_vline.c",
-            "lib_leaveok.c",
-            "lib_window.c",
-            "lib_newwin.c",
-            "lib_dft_fgbg.c",
-            "lib_screen.c",
-            "lib_slkattr.c",
-            "lib_mvwin.c",
-            "lib_slkatron.c",
-            "lib_getch.c",
-            "lib_driver.c",
-            "lib_newterm.c",
-            "lib_scroll.c",
-            "lib_inchstr.c",
-            "lib_instr.c",
-            "lib_restart.c",
-            "lib_wattron.c",
-            "lib_clreol.c",
-            "lib_addch.c",
-            "lib_bkgd.c",
+            "p_above.c",
+            "panel.c",
+            "p_below.c",
+            "p_bottom.c",
+            "p_delete.c",
+            "p_hidden.c",
+            "p_hide.c",
+            "p_move.c",
+            "p_new.c",
+            "p_replace.c",
+            "p_show.c",
+            "p_top.c",
+            "p_update.c",
+            "p_user.c",
+            "p_win.c",
         },
     };
+
     pub const progs: Sources = .{
         .dir = "progs",
         .files = &.{
@@ -559,66 +659,243 @@ pub const Sources = struct {
         },
     };
 
-    pub const tinfo = &.{
-        "access.c",
-        "add_tries.c",
-        "alloc_entry.c",
-        "alloc_ttype.c",
-        "captoinfo.c",
-        "comp_error.c",
-        "comp_expand.c",
-        "comp_hash.c",
-        "comp_parse.c",
-        "comp_scan.c",
-        "db_iterator.c",
-        "doalloc.c",
-        "entries.c",
-        "free_ttype.c",
-        "getenv_num.c",
-        "hashed_db.c",
-        "home_terminfo.c",
-        "init_keytry.c",
-        "lib_acs.c",
-        "lib_baudrate.c",
-        "lib_cur_term.c",
-        "lib_data.c",
-        "lib_has_cap.c",
-        "lib_kernel.c",
-        "lib_longname.c",
-        "lib_napms.c",
-        "lib_options.c",
-        "lib_print.c",
-        "lib_raw.c",
-        "lib_setup.c",
-        "lib_termcap.c",
-        "lib_termname.c",
-        "lib_tgoto.c",
-        "lib_ti.c",
-        "lib_tparm.c",
-        "lib_tputs.c",
-        "lib_ttyflags.c",
-        "lib_win32con.c",
-        "lib_win32util.c",
-        // "make_hash.c",
-        // "make_keys.c",
-        "name_match.c",
-        "obsolete.c",
-        "parse_entry.c",
-        "read_entry.c",
-        "read_termcap.c",
-        "strings.c",
-        "tinfo_driver.c",
-        "trim_sgr0.c",
-        "use_screen.c",
-        "write_entry.c",
+    pub const widechar: Sources = .{
+        .dir = "ncurses/widechar",
+        .files = &.{
+            "charable.c",
+            "lib_add_wch.c",
+            "lib_box_set.c",
+            "lib_cchar.c",
+            "lib_erasewchar.c",
+            "lib_get_wch.c",
+            "lib_get_wstr.c",
+            "lib_hline_set.c",
+            "lib_ins_wch.c",
+            "lib_in_wch.c",
+            "lib_in_wchnstr.c",
+            "lib_inwstr.c",
+            "lib_key_name.c",
+            "lib_pecho_wchar.c",
+            "lib_slk_wset.c",
+            "lib_unget_wch.c",
+            "lib_vid_attr.c",
+            "lib_vline_set.c",
+            "lib_wacs.c",
+            "lib_wunctrl.c",
+            "widechars.c",
+        },
     };
-    pub const tty = &.{
-        "hardscroll.c",
-        "hashmap.c",
-        "lib_mvcur.c",
-        "lib_tstp.c",
-        "lib_twait.c",
-        "lib_vidattr.c",
-        "tty_update.c",
+
+    pub const tinfo: Sources = .{
+        .dir = "ncurses/tinfo",
+        .files = &.{
+            "access.c",
+            "add_tries.c",
+            "alloc_entry.c",
+            "alloc_ttype.c",
+            "captoinfo.c",
+            "comp_error.c",
+            "comp_expand.c",
+            "comp_hash.c",
+            "comp_parse.c",
+            "comp_scan.c",
+            "db_iterator.c",
+            "doalloc.c",
+            "entries.c",
+            "free_ttype.c",
+            "getenv_num.c",
+            "hashed_db.c",
+            "home_terminfo.c",
+            "init_keytry.c",
+            "lib_acs.c",
+            "lib_baudrate.c",
+            "lib_cur_term.c",
+            "lib_data.c",
+            "lib_has_cap.c",
+            "lib_kernel.c",
+            "lib_longname.c",
+            "lib_napms.c",
+            "lib_options.c",
+            "lib_print.c",
+            "lib_raw.c",
+            "lib_setup.c",
+            "lib_termcap.c",
+            "lib_termname.c",
+            "lib_tgoto.c",
+            "lib_ti.c",
+            "lib_tparm.c",
+            "lib_tputs.c",
+            "lib_ttyflags.c",
+            "lib_win32con.c",
+            "lib_win32util.c",
+            // "make_hash.c",
+            // "make_keys.c",
+            "name_match.c",
+            "obsolete.c",
+            "parse_entry.c",
+            "read_entry.c",
+            "read_termcap.c",
+            "strings.c",
+            "tinfo_driver.c",
+            "trim_sgr0.c",
+            "use_screen.c",
+            "write_entry.c",
+        },
     };
+    pub const tty: Sources = .{
+        .dir = "ncurses/tty",
+        .files = &.{
+            "hardscroll.c",
+            "hashmap.c",
+            "lib_mvcur.c",
+            "lib_tstp.c",
+            "lib_twait.c",
+            "lib_vidattr.c",
+            "tty_update.c",
+        },
+    };
+};
+
+pub const ZIG_DEFS = .{
+    .@"GCC_PRINTFLIKE(fmt,var)" = .@"__attribute__((format(printf,fmt,var)))",
+    .@"GCC_SCANFLIKE(fmt,var)" = .@"__attribute__((format(scanf,fmt,var)))",
+    .CPP_HAS_OVERRIDE = 1,
+    .CPP_HAS_STATIC_CAST = 1,
+    .DECL_ENVIRON = 1,
+    .GCC_NORETURN = .@"__attribute__((noreturn))",
+    .GCC_PRINTF = 1,
+    .GCC_SCANF = 1,
+    .GCC_UNUSED = .@"__attribute__((unused))",
+    .HAVE_ASSUME_DEFAULT_COLORS = 1,
+    .HAVE_BIG_CORE = 1,
+    .HAVE_CLOCK_GETTIME = 1,
+    .HAVE_CURSES_DATA_BOOLNAMES = 1,
+    .HAVE_CURSES_VERSION = 1,
+    .HAVE_DIRENT_H = 1,
+    .HAVE_ENVIRON = 1,
+    .HAVE_ERRNO = 1,
+    .HAVE_FCNTL_H = 1,
+    .HAVE_FORK = 1,
+    .HAVE_FORM_H = 1,
+    .HAVE_FPATHCONF = 1,
+    .HAVE_FSEEKO = 1,
+    .HAVE_GETCWD = 1,
+    .HAVE_GETEGID = 1,
+    .HAVE_GETEUID = 1,
+    .HAVE_GETOPT = 1,
+    .HAVE_GETOPT_H = 1,
+    .HAVE_GETOPT_HEADER = 1,
+    .HAVE_HAS_KEY = 1,
+    .HAVE_INTTYPES_H = 1,
+    .HAVE_IOSTREAM = 1,
+    .HAVE_ISASCII = 1,
+    .HAVE_LANGINFO_CODESET = 1,
+    .HAVE_LIBFORM = 1,
+    .HAVE_LIBMENU = 1,
+    .HAVE_LIBPANEL = 1,
+    .HAVE_LIMITS_H = 1,
+    .HAVE_LINK = 1,
+    .HAVE_LOCALE_H = 1,
+    .HAVE_LOCALECONV = 1,
+    .HAVE_LONG_FILE_NAMES = 1,
+    .HAVE_MATH_FUNCS = 1,
+    .HAVE_MATH_H = 1,
+    .HAVE_MEMORY_H = 1,
+    .HAVE_MENU_H = 1,
+    .HAVE_MKSTEMP = 1,
+    .HAVE_NANOSLEEP = 1,
+    .HAVE_NC_ALLOC_H = 1,
+    .HAVE_PANEL_H = 1,
+    .HAVE_POLL = 1,
+    .HAVE_POLL_H = 1,
+    .HAVE_PUTENV = 1,
+    .HAVE_REGEX_H_FUNCS = 1,
+    .HAVE_REMOVE = 1,
+    .HAVE_RESIZE_TERM = 1,
+    .HAVE_RESIZETERM = 1,
+    .HAVE_SELECT = 1,
+    .HAVE_SETBUF = 1,
+    .HAVE_SETBUFFER = 1,
+    .HAVE_SETENV = 1,
+    .HAVE_SETFSUID = 1,
+    .HAVE_SETVBUF = 1,
+    .HAVE_SIGACTION = 1,
+    .HAVE_SIZECHANGE = 1,
+    .HAVE_SLK_COLOR = 1,
+    .HAVE_SNPRINTF = 1,
+    .HAVE_STDINT_H = 1,
+    .HAVE_STDLIB_H = 1,
+    .HAVE_STRDUP = 1,
+    .HAVE_STRING_H = 1,
+    .HAVE_STRINGS_H = 1,
+    .HAVE_STRSTR = 1,
+    .HAVE_SYMLINK = 1,
+    .HAVE_SYS_IOCTL_H = 1,
+    .HAVE_SYS_PARAM_H = 1,
+    .HAVE_SYS_POLL_H = 1,
+    .HAVE_SYS_SELECT_H = 1,
+    .HAVE_SYS_STAT_H = 1,
+    .HAVE_SYS_TIME_H = 1,
+    .HAVE_SYS_TIME_SELECT = 1,
+    .HAVE_SYS_TIMES_H = 1,
+    .HAVE_SYS_TYPES_H = 1,
+    .HAVE_SYSCONF = 1,
+    .HAVE_TCGETATTR = 1,
+    .HAVE_TCGETPGRP = 1,
+    .HAVE_TERM_ENTRY_H = 1,
+    .HAVE_TERMIO_H = 1,
+    .HAVE_TERMIOS_H = 1,
+    .HAVE_TIMES = 1,
+    .HAVE_TPUTS_SP = 1,
+    .HAVE_TSEARCH = 1,
+    .HAVE_TYPEINFO = 1,
+    .HAVE_UNISTD_H = 1,
+    .HAVE_UNLINK = 1,
+    .HAVE_USE_DEFAULT_COLORS = 1,
+    .HAVE_USE_EXTENDED_NAMES = 1,
+    .HAVE_USE_SCREEN = 1,
+    .HAVE_USE_WINDOW = 1,
+    .HAVE_VA_COPY = 1,
+    .HAVE_VFORK = 1,
+    .HAVE_VSNPRINTF = 1,
+    .HAVE_VSSCANF = 1,
+    .HAVE_WCTYPE_H = 1,
+    .HAVE_WORKING_FORK = 1,
+    .HAVE_WORKING_POLL = 1,
+    .HAVE_WORKING_VFORK = 1,
+    .HAVE_WRESIZE = 1,
+    .IOSTREAM_NAMESPACE = 1,
+    .MIXEDCASE_FILENAMES = 1,
+    .NCURSES_EXT_FUNCS = 1,
+    .NCURSES_EXT_PUTWIN = 1,
+    .NCURSES_NO_PADDING = 1,
+    .NCURSES_OSPEED_COMPAT = 1,
+    .NCURSES_PATCHDATE = "20230311",
+    .NCURSES_PATHSEP = ':',
+    .NCURSES_SP_FUNCS = 1,
+    .NCURSES_VERSION = "6.4",
+    .NCURSES_VERSION_STRING = "6.4.20230311",
+    .NCURSES_WRAP_PREFIX = "_nc_",
+    .PACKAGE = "ncurses",
+    .PURE_TERMINFO = 1,
+    .RGB_PATH = "/usr/share/X11/rgb.txt",
+    .SIG_ATOMIC_T = .@"volatile sig_atomic_t",
+    .SIZEOF_BOOL = 1,
+    .SIZEOF_SIGNED_CHAR = 1,
+    .STDC_HEADERS = 1,
+    .SYSTEM_NAME = "linux-gnu",
+    .TERMINFO = "/usr/share/terminfo",
+    .TERMINFO_DIRS = "/usr/share/terminfo",
+    .TIME_WITH_SYS_TIME = 1,
+    .USE_ASSUMED_COLOR = 1,
+    .USE_FOPEN_BIN_R = 1,
+    .USE_HASHMAP = 1,
+    .USE_HOME_TERMINFO = 1,
+    .USE_LINKS = 1,
+    .USE_OPENPTY_HEADER = .@"<pty.h>",
+    .USE_ROOT_ACCESS = 1,
+    .USE_ROOT_ENVIRON = 1,
+    .USE_SIGWINCH = 1,
+    .USE_TERM_DRIVER = 1,
+    .USE_XTERM_PTY = 1,
 };
