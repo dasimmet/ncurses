@@ -71,7 +71,7 @@ pub fn main() !void {
         }
     }
     var found_unused: bool = false;
-    for (files_used.items, 0..) |fu,i| {
+    for (files_used.items, 0..) |fu, i| {
         if (fu == 0) {
             found_unused = true;
             const key = tpl_args[2 * i];
