@@ -430,6 +430,10 @@ pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename:
     return out;
 }
 
+/// a copy of std.Build.Step.ConfigHeader
+/// except not writing the comment about it
+/// being generated. ncurses templates a `.awk` that does not
+/// support c-style comments.
 pub fn addConfigHeaderNoComment(
     b: *std.Build,
     options: ConfigHeaderNoComment.Options,
@@ -524,6 +528,8 @@ pub const Tests = struct {
     };
 };
 
+/// listings of c source code files
+/// separated by directory
 pub const Sources = struct {
     dir: []const u8,
     files: []const []const u8,
@@ -552,20 +558,7 @@ pub const Sources = struct {
 
     pub const ncurses: Sources = .{
         .dir = "ncurses",
-        .files = &.{
-            // "codes.c",
-            // "comp_captab.c",
-            // "comp_userdefs.c",
-            // "expanded.c",
-            // "fallback.c",
-            // "lib_gen.c",
-            // "lib_keyname.c",
-            // "link_test.c",
-            // "names.c",
-            // "report_hashing.c",
-            // "report_offsets.c",
-            // "unctrl.c",
-        },
+        .files = &.{},
     };
 
     pub const base: Sources = .{
