@@ -31,7 +31,13 @@ pub fn build(b: *std.Build) void {
     modncurses.addCSourceFiles(.{
         .root = b.path("src"),
         .flags = Sources.flags,
-        .files = &.{"comp_userdefs.c"},
+        .files = &.{
+            "comp_userdefs.c",
+            "comp_captab.c",
+            "fallback.c",
+            "lib_gen.c",
+            "unctrl.c",
+        },
     });
 
     modncurses.addIncludePath(ncurses.path("include"));
@@ -198,61 +204,24 @@ pub fn build(b: *std.Build) void {
     libncurses.installHeader(curses_h, "curses.h");
 
     {
-        const demo = b.addExecutable(.{
-            .name = "demo",
-            .root_module = b.createModule(.{
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
-        // demo.addCSourceFiles(.{
-        //     .root = ncurses.path("c++"),
-        //     .files = &.{
-        //         "cursesapp.cc",
-        //         "cursesf.cc",
-        //         "cursesmain.cc",
-        //         "cursesm.cc",
-        //         "cursespad.cc",
-        //         "cursesp.cc",
-        //         "cursesw.cc",
-        //         "cursslk.cc",
-        //         "demo.cc",
-        //     },
-        //     .flags = Sources.flags,
-        // });
-        demo.addCSourceFiles(.{
-            .root = ncurses.path("test"),
-            .files = &.{
-                // "knight.c"
-                // "demo_altkeys.c",
-                // "demo_defkey.c",
-                "demo_forms.c",
-                // "demo_keyok.c",
-                // "demo_menus.c",
-                // "demo_new_pair.c",
-                // "demo_panels.c",
-                // "demo_tabs.c",
-                // "demo_termcap.c",
-                // "demo_terminfo.c",
-            },
-            .flags = Sources.flags,
-        });
-        // demo.linkLibCpp();
-        demo.linkLibrary(libncurses);
-        demo.addIncludePath(ncurses.path("test"));
-        // demo.addIncludePath(ncurses.path("c++"));
-        // demo.addIncludePath(ncurses_cfg_h.dirname());
-        // const etip_h = b.addConfigHeader(
-        //     .{
-        //         .style = .{ .autoconf_at = ncurses.path("c++/etip.h.in") },
-        //         .include_path = "etip.h",
-        //     },
-        //     .{},
-        // );
-        // demo.addIncludePath(etip_h.getOutputDir());
-
-        const demo_run = b.addRunArtifact(demo);
-        b.step("demo", "run demo").dependOn(&demo_run.step);
+        const demo_step = b.step("demo", "build demos");
+        for (Tests.all) |testf| {
+            const demo = b.addExecutable(.{
+                .name = testf.name,
+                .root_module = b.createModule(.{
+                    .target = target,
+                    .optimize = optimize,
+                }),
+            });
+            demo.addCSourceFiles(.{
+                .root = ncurses.path(testf.dir),
+                .files = testf.files,
+                .flags = Sources.flags,
+            });
+            demo.linkLibrary(libncurses);
+            demo.addIncludePath(ncurses.path(testf.dir));
+            demo_step.dependOn(&b.addInstallArtifact(demo, .{}).step);
+        }
     }
 
     {
@@ -404,6 +373,42 @@ pub fn addConfigHeaderNoComment(
     return config_header_step;
 }
 
+pub const Tests = struct {
+    dir: []const u8 = "test",
+    name: []const u8,
+    files: []const []const u8,
+    pub const all: []const Tests = &.{
+        .{
+            .name = "knight",
+            .files = &.{"knight.c"},
+        },
+        .{
+            .name = "terminfo",
+            .files = &.{"demo_terminfo.c"},
+        },
+        .{
+            .name = "new_pair",
+            .files = &.{"demo_new_pair.c"},
+        },
+        .{
+            .name = "panels",
+            .files = &.{"demo_panels.c"},
+        },
+        .{
+            .name = "tabs",
+            .files = &.{"demo_tabs.c"},
+        },
+        // .{
+        //       "demo_defkey.c",
+        //     "demo_forms.c",
+        //     "edit_field.c",
+        //     "demo_keyok.c",
+        //     "demo_menus.c",
+        //     "demo_termcap.c",
+        // }
+    };
+};
+
 pub const Sources = struct {
     dir: []const u8,
     files: []const []const u8,
@@ -427,6 +432,7 @@ pub const Sources = struct {
         "-pedantic",
         "-Wno-error=unused-but-set-variable",
         "-Wno-error=implicit-function-declaration",
+        "-fno-strict-overflow",
     };
 
     pub const ncurses: Sources = .{
@@ -784,7 +790,7 @@ pub const ZIG_DEFS = .{
     .GCC_UNUSED = .@"__attribute__((unused))",
     .HAVE_ASSUME_DEFAULT_COLORS = 1,
     .HAVE_BIG_CORE = 1,
-    .HAVE_CLOCK_GETTIME = 1,
+    .HAVE_CLOCK_GETTIME = 0,
     .HAVE_CURSES_DATA_BOOLNAMES = 1,
     .HAVE_CURSES_VERSION = 1,
     .HAVE_DIRENT_H = 1,
@@ -820,6 +826,7 @@ pub const ZIG_DEFS = .{
     .HAVE_MENU_H = 1,
     .HAVE_MKSTEMP = 1,
     .HAVE_NANOSLEEP = 1,
+    .HAVE_NAPMS = 1,
     .HAVE_NC_ALLOC_H = 1,
     .HAVE_PANEL_H = 1,
     .HAVE_POLL = 1,
@@ -871,8 +878,6 @@ pub const ZIG_DEFS = .{
     .HAVE_USE_EXTENDED_NAMES = 1,
     .HAVE_USE_SCREEN = 1,
     .HAVE_USE_WINDOW = 1,
-    .USE_WIDEC_SUPPORT = 0,
-    .NCURSES_WIDECHAR = 0,
     .HAVE_VA_COPY = 1,
     .HAVE_VFORK = 1,
     .HAVE_VSNPRINTF = 1,
@@ -893,6 +898,7 @@ pub const ZIG_DEFS = .{
     .NCURSES_SP_FUNCS = 1,
     .NCURSES_VERSION = "6.4",
     .NCURSES_VERSION_STRING = "6.4.20230311",
+    .NCURSES_WIDECHAR = 0,
     .NCURSES_WRAP_PREFIX = "_nc_",
     .PACKAGE = "ncurses",
     .PURE_TERMINFO = 1,
@@ -915,5 +921,6 @@ pub const ZIG_DEFS = .{
     .USE_ROOT_ENVIRON = 1,
     .USE_SIGWINCH = 1,
     .USE_TERM_DRIVER = 1,
+    .USE_WIDEC_SUPPORT = 0,
     .USE_XTERM_PTY = 1,
 };
