@@ -78,12 +78,23 @@ pub fn build(b: *std.Build) void {
     modncurses.addCMacro("BUILDING_NCURSES", "");
     modncurses.addCMacro("_DEFAULT_SOURCE", "");
     modncurses.addCMacro("_XOPEN_SOURCE", "600");
-    // modncurses.addCMacro("NDEBUG", "");
     modncurses.addCMacro("HAVE_CONFIG_H", "1");
     // modncurses.addCMacro("TRACE", "");
     modncurses.addCMacro("NCURSES_STATIC", "");
 
-    const libncurses = b.addLibrary(.{ .name = "ncurses", .root_module = modncurses });
+    const linkage: std.builtin.LinkMode = blk: {
+        if (b.option(bool, "dynamic", "build a shared library")) |opt| {
+            break :blk switch (opt) {
+                true => .dynamic,
+                false => .static
+            };
+        } else break :blk .static;
+    };
+    const libncurses = b.addLibrary(.{
+        .name = "ncurses",
+        .root_module = modncurses,
+        .linkage = linkage, 
+    });
     libncurses.installLibraryHeaders(libncurses);
     inline for (&.{
         "include",
@@ -92,15 +103,6 @@ pub fn build(b: *std.Build) void {
         "form",
     }) |dir| {
         libncurses.installHeadersDirectory(ncurses.path(dir), "", .{});
-    }
-
-    inline for (&.{
-        // .{ "menu/mf_common.h", "mf_common.h" },
-        // .{ "menu/eti.h", "eti.h" },
-        // .{ "menu/menu.h", "menu.h" },
-        // .{ "panel/panel.h", "panel.h" },
-    }) |header| {
-        libncurses.installHeader(ncurses.path(header[0]), header[1]);
     }
 
     b.installArtifact(libncurses);
