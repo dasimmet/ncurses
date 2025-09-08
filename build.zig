@@ -6,9 +6,12 @@ const zon_version = std.SemanticVersion.parse(zon.version) catch unreachable;
 pub const ncurses_version = struct {
     pub const major = @as(i64, zon_version.major);
     pub const minor = @as(i64, zon_version.minor);
-    pub const patch_str = "20230311";
     pub const patch = 20230311;
     pub const mouse = 2;
+
+    pub fn patch_str(b: *std.Build) []const u8 {
+        return b.fmt("{}", .{patch});
+    }
 };
 
 pub fn build(b: *std.Build) void {
@@ -174,7 +177,7 @@ pub fn build(b: *std.Build) void {
     }, .{
         .NCURSES_MAJOR = ncurses_version.major,
         .NCURSES_MINOR = ncurses_version.minor,
-        .NCURSES_PATCH = ncurses_version.patch_str,
+        .NCURSES_PATCH = ncurses_version.patch_str(b),
         .NCURSES_MOUSE_VERSION = ncurses_version.mouse,
 
         .HAVE_STDINT_H = 1,
@@ -302,7 +305,7 @@ pub fn build(b: *std.Build) void {
             .NCURSES_USE_TERMCAP = 0,
             .NCURSES_USE_DATABASE = 1,
             .NCURSES_CONST = "const",
-            .NCURSES_PATCH = ncurses_version.patch_str,
+            .NCURSES_PATCH = ncurses_version.patch_str(b),
             .NCURSES_SP_FUNCS = 1,
         });
         const term_h = runAwkTpl(
