@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) void {
     });
 
     modncurses.addCSourceFile(.{
-        .file = runAwkDefs(
+        .file = runAwkTpl(
             b,
             ncurses.path("ncurses/base/MKkeyname.awk"),
             &.{b.path("src/keys.list")},
@@ -52,7 +52,7 @@ pub fn build(b: *std.Build) void {
     });
 
     modncurses.addCSourceFile(.{
-        .file = runAwkDefs(
+        .file = runAwkTpl(
             b,
             ncurses.path("ncurses/base/MKunctrl.awk"),
             &.{b.path("src/empty")},
@@ -62,7 +62,7 @@ pub fn build(b: *std.Build) void {
     });
 
     modncurses.addCSourceFile(.{
-        .file = runAwkDefs(
+        .file = runAwkTpl(
             b,
             ncurses.path("ncurses/tinfo/MKcodes.awk"),
             &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
@@ -307,17 +307,12 @@ pub fn build(b: *std.Build) void {
             .NCURSES_PATCH = ncurses_version.patch_str,
             .NCURSES_SP_FUNCS = 1,
         });
-        const awk_dep = b.dependency("awk", .{
-            .target = b.graph.host,
-            .optimize = .ReleaseSmall,
-        });
-        const term_h_run = b.addRunArtifact(awk_dep.artifact("awk"));
-        term_h_run.addArg("-f");
-        term_h_run.addFileArg(mkterm_h.getOutput());
-        term_h_run.addFileArg(ncurses.path("include/Caps"));
-        term_h_run.addFileArg(ncurses.path("include/Caps-ncurses"));
-        const term_wf = b.addWriteFiles();
-        const term_h = term_wf.addCopyFile(term_h_run.captureStdOut(), "term.h");
+        const term_h = runAwkTpl(
+            b,
+            mkterm_h.getOutput(),
+            &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
+            "term.h",
+        );
         modncurses.addIncludePath(term_h.dirname());
         libncurses.installHeader(term_h, "term.h");
         headers_step.dependOn(&b.addInstallHeaderFile(
@@ -325,14 +320,12 @@ pub fn build(b: *std.Build) void {
             "term.h",
         ).step);
 
-        const names_c_run = b.addRunArtifact(awk_dep.artifact("awk"));
-        names_c_run.addArg("-f");
-        names_c_run.addFileArg(ncurses.path("ncurses/tinfo/MKnames.awk"));
-        names_c_run.addArg("bigstrings=1");
-        names_c_run.addFileArg(ncurses.path("include/Caps"));
-        names_c_run.addFileArg(ncurses.path("include/Caps-ncurses"));
-        const names_wf = b.addWriteFiles();
-        const names_c = names_wf.addCopyFile(names_c_run.captureStdOut(), "names.c");
+        const names_c = runAwkTpl(
+            b,
+            ncurses.path("ncurses/tinfo/MKnames.awk"),
+            &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
+            "names.c",
+        );
         makekeys.addIncludePath(names_c.dirname());
         modncurses.addCSourceFile(.{
             .file = names_c,
@@ -341,7 +334,8 @@ pub fn build(b: *std.Build) void {
     }
 }
 
-pub fn runAwkDefs(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+// runs
+pub fn runAwkTpl(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const awk_dep = b.dependency("awk", .{
         .target = b.graph.host,
         .optimize = .ReleaseSmall,
