@@ -55,7 +55,7 @@ pub fn build(b: *std.Build) void {
         .file = runAwkTpl(
             b,
             ncurses.path("ncurses/base/MKunctrl.awk"),
-            &.{b.path("src/empty")},
+            &.{},
             "unctrl.c",
         ),
         .flags = Sources.flags,
@@ -345,6 +345,7 @@ pub fn runAwkTpl(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Buil
     for (defs) |def| {
         awk.addFileArg(def);
     }
+    if (defs.len == 0) awk.setStdIn(.{ .bytes = "" });
     const wf = b.addWriteFiles();
     return wf.addCopyFile(awk.captureStdOut(), basename);
 }
