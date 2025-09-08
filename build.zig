@@ -408,7 +408,7 @@ pub const Tests = struct {
         },
         .{
             .name = "forms",
-            .files = &.{"demo_forms.c", "edit_field.c", "popup_msg.c"},
+            .files = &.{ "demo_forms.c", "edit_field.c", "popup_msg.c" },
         },
         .{
             .name = "keyok",
@@ -425,6 +425,34 @@ pub const Tests = struct {
         .{
             .name = "worm",
             .files = &.{"worm.c"},
+        },
+        .{
+            .name = "bs",
+            .files = &.{"bs.c"},
+        },
+        .{
+            .name = "chgat",
+            .files = &.{ "chgat.c", "popup_msg.c" },
+        },
+        .{
+            .name = "combine",
+            .files = &.{"combine.c"},
+        },
+        .{
+            .name = "padview",
+            .files = &.{ "padview.c", "popup_msg.c" },
+        },
+        .{
+            .name = "extended_color",
+            .files = &.{ "extended_color.c" },
+        },
+        .{
+            .name = "newdemo",
+            .files = &.{ "newdemo.c" },
+        },
+        .{
+            .name = "tclock",
+            .files = &.{ "tclock.c" },
         },
     };
 };
