@@ -4,6 +4,7 @@ pub const ncurses_version = struct {
     pub const major = 6;
     pub const minor = 4;
     pub const patch_str = "20230311";
+    pub const patch = 20230311;
     pub const mouse = 2;
 };
 
@@ -36,7 +37,8 @@ pub fn build(b: *std.Build) void {
     modncurses.addCMacro("BUILDING_NCURSES", "");
     modncurses.addCMacro("_DEFAULT_SOURCE", "");
     modncurses.addCMacro("_XOPEN_SOURCE", "600");
-    modncurses.addCMacro("NDEBUG", "");
+    // modncurses.addCMacro("NDEBUG", "");
+    modncurses.addCMacro("HAVE_CONFIG_H", "1");
     // modncurses.addCMacro("TRACE", "");
     modncurses.addCMacro("NCURSES_STATIC", "");
 
@@ -90,7 +92,7 @@ pub fn build(b: *std.Build) void {
     modncurses.addIncludePath(ncurses_cfg_h.dirname());
     libncurses.installHeader(ncurses_cfg_h, "ncurses_cfg.h");
     headers_step.dependOn(
-        &b.addInstallFile(ncurses_cfg_h, "include/ncurses_cfg.h").step,
+        &b.addInstallHeaderFile(ncurses_cfg_h, "ncurses_cfg.h").step,
     );
 
     const unctrl_h = b.addConfigHeader(.{
@@ -99,13 +101,13 @@ pub fn build(b: *std.Build) void {
     }, .{
         .NCURSES_MAJOR = ncurses_version.major,
         .NCURSES_MINOR = ncurses_version.minor,
-        .NCURSES_SP_FUNCS = 20230311,
+        .NCURSES_SP_FUNCS = 1,
     });
     modncurses.addIncludePath(unctrl_h.getOutputDir());
     libncurses.installConfigHeader(unctrl_h);
 
     headers_step.dependOn(
-        &b.addInstallFile(unctrl_h.getOutput(), "include/unctrl.h").step,
+        &b.addInstallHeaderFile(unctrl_h.getOutput(), "unctrl.h").step,
     );
 
     {
@@ -121,13 +123,13 @@ pub fn build(b: *std.Build) void {
         libncurses.installConfigHeader(termcap_h);
 
         headers_step.dependOn(
-            &b.addInstallFile(termcap_h.getOutput(), "include/termcap.h").step,
+            &b.addInstallHeaderFile(termcap_h.getOutput(), "termcap.h").step,
         );
     }
 
     const defs_h = runMakeNCursesDef(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
     modncurses.addIncludePath(defs_h.dirname());
-    headers_step.dependOn(&b.addInstallFile(defs_h, "include/ncurses_def.h").step);
+    headers_step.dependOn(&b.addInstallHeaderFile(defs_h, "ncurses_def.h").step);
     libncurses.installHeader(defs_h, "ncurses_def.h");
 
     const curses_tmp_h = b.addConfigHeader(.{
@@ -168,12 +170,12 @@ pub fn build(b: *std.Build) void {
         .NCURSES_WCHAR_T = 0,
         .NCURSES_OK_WCHAR_T = "",
         .NCURSES_WINT_T = 0,
-        .NCURSES_EXT_COLORS = 20230311,
+        .NCURSES_EXT_COLORS = 0,
         .cf_cv_1UL = "1U",
         .GENERATED_EXT_FUNCS = "generated",
         .HAVE_VSSCANF = 1,
         .NCURSES_CCHARW_MAX = 5,
-        .NCURSES_SP_FUNCS = 20230311,
+        .NCURSES_SP_FUNCS = 1,
     });
 
     const curses_h = runConcatLazyPath(b, &.{
@@ -182,39 +184,17 @@ pub fn build(b: *std.Build) void {
             ncurses.path("include/Caps"),
             ncurses.path("include/Caps-ncurses"),
         }, "key_defs_tmp.h"),
+        // ncurses.path("include/curses.wide"),
         ncurses.path("include/curses.tail"),
     }, "curses.h");
     headers_step.dependOn(
-        &b.addInstallFile(curses_h, "include/curses.h").step,
+        &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
+
+    modncurses.addIncludePath(ncurses.path("include"));
+    modncurses.addCMacro("BUILDING_NCURSES", "");
     modncurses.addIncludePath(curses_h.dirname());
     libncurses.installHeader(curses_h, "curses.h");
-
-    const libwidechar = b.addLibrary(.{
-        .name = "widechar",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    libwidechar.addCSourceFiles(.{
-        .root = ncurses.path(Sources.widechar.dir),
-        .files = Sources.widechar.files,
-        .flags = Sources.flags,
-    });
-    libwidechar.linkLibC();
-    libwidechar.addIncludePath(ncurses.path("ncurses"));
-    libwidechar.addIncludePath(ncurses.path("include"));
-    libwidechar.addIncludePath(b.path("src"));
-    libwidechar.addIncludePath(ncurses.path("ncurses/term"));
-    libwidechar.addIncludePath(dll_h.getOutputDir());
-    libwidechar.addIncludePath(ncurses_cfg_h.dirname());
-    libwidechar.addIncludePath(defs_h.dirname());
-    libwidechar.addIncludePath(curses_h.dirname());
-    libwidechar.addIncludePath(unctrl_h.getOutputDir());
-    modncurses.linkLibrary(libwidechar);
-
-    // -DHAVE_CONFIG_H -DBUILDING_NCURSES -I../ncurses -I. -I../include -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DNDEBUG -O2 -Qunused-arguments -Wno-error=implicit-function-declaration  -DNCURSES_STATIC -g -DTRACE
 
     {
         const demo = b.addExecutable(.{
@@ -224,27 +204,28 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             }),
         });
-        demo.addCSourceFiles(.{
-            .root = ncurses.path("c++"),
-            .files = &.{
-                "cursesapp.cc",
-                "cursesf.cc",
-                "cursesmain.cc",
-                "cursesm.cc",
-                "cursespad.cc",
-                "cursesp.cc",
-                "cursesw.cc",
-                "cursslk.cc",
-                "demo.cc",
-            },
-            .flags = Sources.flags,
-        });
+        // demo.addCSourceFiles(.{
+        //     .root = ncurses.path("c++"),
+        //     .files = &.{
+        //         "cursesapp.cc",
+        //         "cursesf.cc",
+        //         "cursesmain.cc",
+        //         "cursesm.cc",
+        //         "cursespad.cc",
+        //         "cursesp.cc",
+        //         "cursesw.cc",
+        //         "cursslk.cc",
+        //         "demo.cc",
+        //     },
+        //     .flags = Sources.flags,
+        // });
         demo.addCSourceFiles(.{
             .root = ncurses.path("test"),
             .files = &.{
+                // "knight.c"
                 // "demo_altkeys.c",
                 // "demo_defkey.c",
-                // "demo_forms.c",
+                "demo_forms.c",
                 // "demo_keyok.c",
                 // "demo_menus.c",
                 // "demo_new_pair.c",
@@ -255,19 +236,19 @@ pub fn build(b: *std.Build) void {
             },
             .flags = Sources.flags,
         });
-        demo.linkLibCpp();
+        // demo.linkLibCpp();
         demo.linkLibrary(libncurses);
         demo.addIncludePath(ncurses.path("test"));
-        demo.addIncludePath(ncurses.path("c++"));
-        demo.addIncludePath(ncurses_cfg_h.dirname());
-        const etip_h = b.addConfigHeader(
-            .{
-                .style = .{ .autoconf_at = ncurses.path("c++/etip.h.in") },
-                .include_path = "etip.h",
-            },
-            .{},
-        );
-        demo.addIncludePath(etip_h.getOutputDir());
+        // demo.addIncludePath(ncurses.path("c++"));
+        // demo.addIncludePath(ncurses_cfg_h.dirname());
+        // const etip_h = b.addConfigHeader(
+        //     .{
+        //         .style = .{ .autoconf_at = ncurses.path("c++/etip.h.in") },
+        //         .include_path = "etip.h",
+        //     },
+        //     .{},
+        // );
+        // demo.addIncludePath(etip_h.getOutputDir());
 
         const demo_run = b.addRunArtifact(demo);
         b.step("demo", "run demo").dependOn(&demo_run.step);
@@ -289,37 +270,45 @@ pub fn build(b: *std.Build) void {
             .cf_cv_enable_reentrant = 0,
             .HAVE_TCGETATTR = 1,
             .NCURSES_SBOOL = "char",
-            .NCURSES_EXT_COLORS = 20230311,
+            .NCURSES_EXT_COLORS = 0,
             .EXP_WIN32_DRIVER = 0,
             .NCURSES_XNAMES = 1,
             .NCURSES_USE_TERMCAP = 0,
             .NCURSES_USE_DATABASE = 1,
             .NCURSES_CONST = "const",
             .NCURSES_PATCH = ncurses_version.patch_str,
-            .NCURSES_SP_FUNCS = 20230311,
+            .NCURSES_SP_FUNCS = 1,
         });
-        const term_h = b.addSystemCommand(&.{
-            "awk", "-f",
+        const awk_dep = b.dependency("awk", .{
+            .target = b.graph.host,
+            .optimize = .ReleaseSmall,
         });
-        term_h.addFileArg(mkterm_h.getOutput());
-        term_h.addFileArg(ncurses.path("include/Caps"));
-        term_h.addFileArg(ncurses.path("include/Caps-ncurses"));
-        const update_term_h = b.addUpdateSourceFiles();
-        update_term_h.addCopyFileToSource(term_h.captureStdOut(), "src/term.h");
-        b.step("update_term_h", "update term_h").dependOn(&update_term_h.step);
-    }
+        const term_h_run = b.addRunArtifact(awk_dep.artifact("awk"));
+        term_h_run.addArg("-f");
+        term_h_run.addFileArg(mkterm_h.getOutput());
+        term_h_run.addFileArg(ncurses.path("include/Caps"));
+        term_h_run.addFileArg(ncurses.path("include/Caps-ncurses"));
+        const term_wf = b.addWriteFiles();
+        const term_h = term_wf.addCopyFile(term_h_run.captureStdOut(), "term.h");
+        modncurses.addIncludePath(term_h.dirname());
+        libncurses.installHeader(term_h, "term.h");
+        headers_step.dependOn(&b.addInstallHeaderFile(
+            term_h,
+            "term.h",
+        ).step);
 
-    {
-        const names_c = b.addSystemCommand(&.{
-            "awk", "-f",
+        const names_c_run = b.addRunArtifact(awk_dep.artifact("awk"));
+        names_c_run.addArg("-f");
+        names_c_run.addFileArg(ncurses.path("ncurses/tinfo/MKnames.awk"));
+        names_c_run.addArg("bigstrings=1");
+        names_c_run.addFileArg(ncurses.path("include/Caps"));
+        names_c_run.addFileArg(ncurses.path("include/Caps-ncurses"));
+        const names_wf = b.addWriteFiles();
+        const names_c = names_wf.addCopyFile(names_c_run.captureStdOut(), "names.c");
+        modncurses.addCSourceFile(.{
+            .file = names_c,
+            .flags = Sources.flags,
         });
-        names_c.addFileArg(ncurses.path("ncurses/tinfo/MKnames.awk"));
-        names_c.addArg("bigstrings=1");
-        names_c.addFileArg(ncurses.path("include/Caps"));
-        names_c.addFileArg(ncurses.path("include/Caps-ncurses"));
-        const update_cames_c = b.addUpdateSourceFiles();
-        update_cames_c.addCopyFileToSource(names_c.captureStdOut(), "src/term.h");
-        b.step("update_names_c", "update src/names.c").dependOn(&update_cames_c.step);
     }
 }
 
@@ -387,9 +376,15 @@ pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename:
     const out = run.addOutputFileArg(basename);
     inline for (comptime std.meta.fields(@TypeOf(args))) |field| {
         const value = @field(args, field.name);
-        std.debug.assert(@TypeOf(value) == std.Build.LazyPath);
-        run.addArg(field.name);
-        run.addFileArg(value);
+        if (@typeInfo(@TypeOf(value)) == .optional) {
+            if (value) |v| {
+                run.addArg(field.name);
+                run.addFileArg(v);
+            }
+        } else {
+            run.addArg(field.name);
+            run.addFileArg(value);
+        }
     }
     return out;
 }
@@ -406,10 +401,16 @@ pub const Sources = struct {
         form,
         trace,
         tinfo,
+        // widechar,
         tty,
     };
     pub const flags = &.{
         "-Qunused-arguments",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-Wno-error=unused-but-set-variable",
         "-Wno-error=implicit-function-declaration",
     };
 
@@ -855,6 +856,8 @@ pub const ZIG_DEFS = .{
     .HAVE_USE_EXTENDED_NAMES = 1,
     .HAVE_USE_SCREEN = 1,
     .HAVE_USE_WINDOW = 1,
+    .USE_WIDEC_SUPPORT = 0,
+    .NCURSES_WIDECHAR = 0,
     .HAVE_VA_COPY = 1,
     .HAVE_VFORK = 1,
     .HAVE_VSNPRINTF = 1,
@@ -870,7 +873,7 @@ pub const ZIG_DEFS = .{
     .NCURSES_EXT_PUTWIN = 1,
     .NCURSES_NO_PADDING = 1,
     .NCURSES_OSPEED_COMPAT = 1,
-    .NCURSES_PATCHDATE = "20230311",
+    .NCURSES_PATCHDATE = ncurses_version.patch,
     .NCURSES_PATHSEP = ':',
     .NCURSES_SP_FUNCS = 1,
     .NCURSES_VERSION = "6.4",

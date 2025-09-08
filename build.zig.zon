@@ -9,6 +9,10 @@
             .url = "git+https://github.com/mirror/ncurses.git?ref=v6.4#79b9071f2be20a24c7be031655a5638f6032f29f",
             .hash = "N-V-__8AAHWSEwGDuK7Qx8Q-Mx6pjeYBBX9g8I6uJ9r5DZ9L",
         },
+        .awk = .{
+            .url = "git+https://github.com/dasimmet/zig-awk.git#92144c3ea0cf9094312d22a963353fdcc762fb28",
+            .hash = "awk-0.0.1-NbEIKjEOAACZJkoe0eOD4uW2IMykiflRvuiPsEDM3kOy",
+        },
     },
     .paths = .{
         "build.zig",
