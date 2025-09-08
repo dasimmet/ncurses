@@ -1,6 +1,6 @@
 .{
     .name = .ncurses,
-    .version = "0.0.1",
+    .version = "6.4.0",
     .minimum_zig_version = "0.15.1",
     .fingerprint = 0xbfb0fbf798176298,
     .dependencies = .{

@@ -1,9 +1,11 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 const ConfigHeaderNoComment = @import("src/ConfigHeaderNoComment.zig");
+const zon_version = std.SemanticVersion.parse(zon.version) catch unreachable;
 
 pub const ncurses_version = struct {
-    pub const major = 6;
-    pub const minor = 4;
+    pub const major = @as(i64, zon_version.major);
+    pub const minor = @as(i64, zon_version.minor);
     pub const patch_str = "20230311";
     pub const patch = 20230311;
     pub const mouse = 2;
