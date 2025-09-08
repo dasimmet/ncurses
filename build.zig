@@ -1,4 +1,5 @@
 const std = @import("std");
+const ConfigHeaderNoComment = @import("src/ConfigHeaderNoComment.zig");
 
 pub const ncurses_version = struct {
     pub const major = 6;
@@ -255,7 +256,7 @@ pub fn build(b: *std.Build) void {
     }
 
     {
-        const mkterm_h = b.addConfigHeader(.{
+        const mkterm_h = addConfigHeaderNoComment(b, .{
             .style = .{
                 .autoconf_at = ncurses.path("include/MKterm.h.awk.in"),
             },
@@ -387,6 +388,20 @@ pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename:
         }
     }
     return out;
+}
+
+pub fn addConfigHeaderNoComment(
+    b: *std.Build,
+    options: ConfigHeaderNoComment.Options,
+    values: anytype,
+) *ConfigHeaderNoComment {
+    var options_copy = options;
+    if (options_copy.first_ret_addr == null)
+        options_copy.first_ret_addr = @returnAddress();
+
+    const config_header_step = ConfigHeaderNoComment.create(b, options_copy);
+    config_header_step.addValues(values);
+    return config_header_step;
 }
 
 pub const Sources = struct {
