@@ -38,10 +38,37 @@ pub fn build(b: *std.Build) void {
             "comp_captab.c",
             "fallback.c",
             "lib_gen.c",
-            "lib_keyname.c",
-            "unctrl.c",
-            "codes.c",
         },
+    });
+
+    modncurses.addCSourceFile(.{
+        .file = runAwkDefs(
+            b,
+            ncurses.path("ncurses/base/MKkeyname.awk"),
+            &.{b.path("src/keys.list")},
+            "lib_keyname.c",
+        ),
+        .flags = Sources.flags,
+    });
+
+    modncurses.addCSourceFile(.{
+        .file = runAwkDefs(
+            b,
+            ncurses.path("ncurses/base/MKunctrl.awk"),
+            &.{b.path("src/empty")},
+            "unctrl.c",
+        ),
+        .flags = Sources.flags,
+    });
+
+    modncurses.addCSourceFile(.{
+        .file = runAwkDefs(
+            b,
+            ncurses.path("ncurses/tinfo/MKcodes.awk"),
+            &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
+            "codes.c",
+        ),
+        .flags = Sources.flags,
     });
 
     modncurses.addIncludePath(ncurses.path("include"));
@@ -202,6 +229,31 @@ pub fn build(b: *std.Build) void {
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
 
+    const makekeys = b.addExecutable(.{
+        .name = "makekeys",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSmall,
+            .link_libc = true,
+        }),
+    });
+    makekeys.addIncludePath(unctrl_h.getOutputDir());
+    makekeys.addIncludePath(curses_h.dirname());
+    makekeys.addIncludePath(defs_h.dirname());
+    makekeys.addIncludePath(ncurses_cfg_h.dirname());
+    makekeys.addIncludePath(dll_h.getOutputDir());
+    makekeys.addIncludePath(ncurses.path("include"));
+    makekeys.addIncludePath(ncurses.path("ncurses"));
+    makekeys.addCSourceFile(.{
+        .file = ncurses.path("ncurses/tinfo/make_keys.c"),
+        .flags = Sources.flags,
+    });
+    const run_mkkeys = b.addRunArtifact(makekeys);
+    run_mkkeys.addFileArg(b.path("src/keys.list"));
+    const keytry_wf = b.addWriteFiles();
+    const keytry_h = keytry_wf.addCopyFile(run_mkkeys.captureStdOut(), "init_keytry.h");
+    modncurses.addIncludePath(keytry_h.dirname());
+
     modncurses.addIncludePath(ncurses.path("include"));
     modncurses.addCMacro("BUILDING_NCURSES", "");
     modncurses.addIncludePath(curses_h.dirname());
@@ -281,11 +333,28 @@ pub fn build(b: *std.Build) void {
         names_c_run.addFileArg(ncurses.path("include/Caps-ncurses"));
         const names_wf = b.addWriteFiles();
         const names_c = names_wf.addCopyFile(names_c_run.captureStdOut(), "names.c");
+        makekeys.addIncludePath(names_c.dirname());
         modncurses.addCSourceFile(.{
             .file = names_c,
             .flags = Sources.flags,
         });
     }
+}
+
+pub fn runAwkDefs(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+    const awk_dep = b.dependency("awk", .{
+        .target = b.graph.host,
+        .optimize = .ReleaseSmall,
+    });
+    const awk = b.addRunArtifact(awk_dep.artifact("awk"));
+    awk.addArg("-f");
+    awk.addFileArg(prog);
+    awk.addArg("bigstrings=1");
+    for (defs) |def| {
+        awk.addFileArg(def);
+    }
+    const wf = b.addWriteFiles();
+    return wf.addCopyFile(awk.captureStdOut(), basename);
 }
 
 /// generates ncurses_def.h from ncurses_defs text file
@@ -446,15 +515,15 @@ pub const Tests = struct {
         },
         .{
             .name = "extended_color",
-            .files = &.{ "extended_color.c" },
+            .files = &.{"extended_color.c"},
         },
         .{
             .name = "newdemo",
-            .files = &.{ "newdemo.c" },
+            .files = &.{"newdemo.c"},
         },
         .{
             .name = "tclock",
-            .files = &.{ "tclock.c" },
+            .files = &.{"tclock.c"},
         },
     };
 };
