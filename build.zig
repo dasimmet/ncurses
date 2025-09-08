@@ -36,7 +36,9 @@ pub fn build(b: *std.Build) void {
             "comp_captab.c",
             "fallback.c",
             "lib_gen.c",
+            "lib_keyname.c",
             "unctrl.c",
+            "codes.c",
         },
     });
 
@@ -205,7 +207,7 @@ pub fn build(b: *std.Build) void {
 
     {
         const demo_step = b.step("demo", "build demos");
-        for (Tests.all) |testf| {
+        inline for (Tests.all) |testf| {
             const demo = b.addExecutable(.{
                 .name = testf.name,
                 .root_module = b.createModule(.{
@@ -221,6 +223,8 @@ pub fn build(b: *std.Build) void {
             demo.linkLibrary(libncurses);
             demo.addIncludePath(ncurses.path(testf.dir));
             demo_step.dependOn(&b.addInstallArtifact(demo, .{}).step);
+            const demo_s = b.step("demo_" ++ testf.name, "run demo " ++ testf.name);
+            demo_s.dependOn(&b.addRunArtifact(demo).step);
         }
     }
 
@@ -398,14 +402,30 @@ pub const Tests = struct {
             .name = "tabs",
             .files = &.{"demo_tabs.c"},
         },
-        // .{
-        //       "demo_defkey.c",
-        //     "demo_forms.c",
-        //     "edit_field.c",
-        //     "demo_keyok.c",
-        //     "demo_menus.c",
-        //     "demo_termcap.c",
-        // }
+        .{
+            .name = "defkey",
+            .files = &.{"demo_defkey.c"},
+        },
+        .{
+            .name = "forms",
+            .files = &.{"demo_forms.c", "edit_field.c", "popup_msg.c"},
+        },
+        .{
+            .name = "keyok",
+            .files = &.{"demo_keyok.c"},
+        },
+        .{
+            .name = "menus",
+            .files = &.{"demo_menus.c"},
+        },
+        .{
+            .name = "termcap",
+            .files = &.{"demo_termcap.c"},
+        },
+        .{
+            .name = "worm",
+            .files = &.{"worm.c"},
+        },
     };
 };
 
