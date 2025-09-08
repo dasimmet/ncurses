@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
         modncurses.addIncludePath(ncurses.path(source.dir));
     }
     modncurses.addCSourceFiles(.{
-        .root = b.path("src"),
+        .root = b.path("src/c"),
         .flags = Sources.flags,
         .files = &.{
             "comp_userdefs.c",
@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) void {
         .file = runAwkTpl(
             b,
             ncurses.path("ncurses/base/MKkeyname.awk"),
-            &.{b.path("src/keys.list")},
+            &.{b.path("src/c/keys.list")},
             "lib_keyname.c",
         ),
         .flags = Sources.flags,
@@ -110,9 +110,7 @@ pub fn build(b: *std.Build) void {
     });
     modncurses.addIncludePath(dll_h.getOutputDir());
     libncurses.installConfigHeader(dll_h);
-
-    modncurses.addIncludePath(b.path("src"));
-    libncurses.installHeadersDirectory(b.path("src"), "", .{});
+    modncurses.addIncludePath(b.path("src/c"));
 
     const ncurses_zig_defs = b.addConfigHeader(.{
         .style = .blank,
@@ -249,7 +247,7 @@ pub fn build(b: *std.Build) void {
         .flags = Sources.flags,
     });
     const run_mkkeys = b.addRunArtifact(makekeys);
-    run_mkkeys.addFileArg(b.path("src/keys.list"));
+    run_mkkeys.addFileArg(b.path("src/c/keys.list"));
     const keytry_wf = b.addWriteFiles();
     const keytry_h = keytry_wf.addCopyFile(run_mkkeys.captureStdOut(), "init_keytry.h");
     modncurses.addIncludePath(keytry_h.dirname());
@@ -334,7 +332,7 @@ pub fn build(b: *std.Build) void {
     }
 }
 
-// runs
+/// runs awk prgram and captures stdout
 pub fn runAwkTpl(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const awk_dep = b.dependency("awk", .{
         .target = b.graph.host,
