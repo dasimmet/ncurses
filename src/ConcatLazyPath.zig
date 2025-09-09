@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat.zig");
 
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}).init;
@@ -21,7 +22,7 @@ pub fn main() !void {
     const writer = &output.interface;
 
     for (inpaths) |ip| {
-        const infile = try std.fs.cwd().readFileAlloc(gpa, ip, std.math.maxInt(usize));
+        const infile = try compat.cwdReadFileAlloc(ip, gpa, std.math.maxInt(usize));
         defer gpa.free(infile);
         try writer.writeAll(infile);
     }

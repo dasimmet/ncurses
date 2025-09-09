@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat.zig");
 
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}).init;
@@ -43,7 +44,7 @@ pub fn main() !void {
     defer caps.deinit(gpa);
 
     for (inpaths) |inpath| {
-        const infile = try std.fs.cwd().readFileAlloc(arena, inpath, std.math.maxInt(usize));
+        const infile = try compat.cwdReadFileAlloc(inpath, arena, std.math.maxInt(usize));
 
         var line_iter = std.mem.splitScalar(
             u8,

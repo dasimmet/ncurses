@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat.zig");
 
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}).init;
@@ -14,7 +15,7 @@ pub fn main() !void {
     const outpath = args[2];
     const tpl_args = args[3..];
 
-    const infile = try std.fs.cwd().readFileAlloc(gpa, inpath, std.math.maxInt(usize));
+    const infile = try compat.cwdReadFileAlloc(inpath, gpa, std.math.maxInt(usize));
     defer gpa.free(infile);
 
     const outfile = try std.fs.cwd().createFile(outpath, .{});
@@ -36,7 +37,7 @@ pub fn main() !void {
         var arg_pos: usize = 0;
         while (arg_pos < tpl_args.len) : (arg_pos += 2) {
             const value = tpl_args[arg_pos + 1];
-            const v_file = try std.fs.cwd().readFileAlloc(gpa, value, std.math.maxInt(usize));
+            const v_file = try compat.cwdReadFileAlloc(value, gpa, std.math.maxInt(usize));
             try files.append(gpa, v_file);
             try files_used.append(gpa, 0);
         }
