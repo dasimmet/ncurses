@@ -29,6 +29,9 @@ jobs:
       - name: Run `build` linux
         run: zig build -Dtarget=x86_64-linux-musl --prefix zig-out/x86_64-linux-musl install demo
 
+      - name: Run `build` macos
+        run: zig build -Dtarget=x86_64-macos --prefix zig-out/x86_64-macos install demo
+
       - name: check git diff
         run: git diff --exit-code
   
