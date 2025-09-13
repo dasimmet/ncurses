@@ -39,12 +39,14 @@ pub fn build(b: *std.Build) void {
         modncurses.addIncludePath(ncurses.path(source.dir));
     }
     if (target.result.os.tag == .windows) {
+        modncurses.addCMacro("USE_TERM_DRIVER", "1");
+        modncurses.addCMacro("USE_WIN32CON_DRIVER", "");
         modncurses.addCSourceFiles(.{
             .root = ncurses.path("ncurses/win32con"),
             .flags = Sources.flags,
             .files = &.{
                 "win_driver.c",
-                "win32_driver.c",
+                // "win32_driver.c",
                 "wcwidth.c",
                 "gettimeofday.c",
             },
@@ -308,7 +310,13 @@ pub fn build(b: *std.Build) void {
 
     {
         const demo_step = b.step("demo", "build demos");
-        inline for (Tests.all) |testf| {
+        for (Tests.all) |testf| {
+            if (!testf.macos) {
+                switch (target.result.os.tag) {
+                    .macos => continue,
+                    else => {},
+                }
+            }
             const demo = b.addExecutable(.{
                 .name = testf.name,
                 .root_module = b.createModule(.{
@@ -324,7 +332,10 @@ pub fn build(b: *std.Build) void {
             demo.linkLibrary(libncurses);
             demo.addIncludePath(ncurses.path(testf.dir));
             demo_step.dependOn(&b.addInstallArtifact(demo, .{}).step);
-            const demo_s = b.step("demo_" ++ testf.name, "run demo " ++ testf.name);
+            const demo_s = b.step(
+                b.fmt("demo_{s}", .{testf.name}),
+                b.fmt("run demo {s}", .{testf.name}),
+            );
             demo_s.dependOn(&b.addRunArtifact(demo).step);
         }
     }
@@ -346,10 +357,11 @@ pub fn build(b: *std.Build) void {
             .HAVE_TCGETATTR = 1,
             .NCURSES_SBOOL = "char",
             .NCURSES_EXT_COLORS = 0,
-            .EXP_WIN32_DRIVER = @as(i64, switch (target.result.os.tag) {
-                .windows => 1,
-                else => 0,
-            }),
+            .EXP_WIN32_DRIVER = 0,
+            // .EXP_WIN32_DRIVER = @as(i64, switch (target.result.os.tag) {
+            //     .windows => 1,
+            //     else => 0,
+            // }),
             .NCURSES_XNAMES = 1,
             .NCURSES_USE_TERMCAP = 0,
             .NCURSES_USE_DATABASE = 1,
@@ -547,6 +559,8 @@ pub const Tests = struct {
     dir: []const u8 = "test",
     name: []const u8,
     files: []const []const u8,
+    macos: bool = true,
+
     pub const all: []const Tests = &.{
         .{
             .name = "knight",
@@ -555,6 +569,7 @@ pub const Tests = struct {
         .{
             .name = "terminfo",
             .files = &.{"demo_terminfo.c"},
+            .macos = false,
         },
         .{
             .name = "new_pair",
@@ -563,6 +578,7 @@ pub const Tests = struct {
         .{
             .name = "panels",
             .files = &.{"demo_panels.c"},
+            .macos = false,
         },
         .{
             .name = "tabs",
@@ -571,10 +587,12 @@ pub const Tests = struct {
         .{
             .name = "defkey",
             .files = &.{"demo_defkey.c"},
+            .macos = false,
         },
         .{
             .name = "forms",
             .files = &.{ "demo_forms.c", "edit_field.c", "popup_msg.c" },
+            .macos = false,
         },
         .{
             .name = "keyok",
@@ -587,6 +605,7 @@ pub const Tests = struct {
         .{
             .name = "termcap",
             .files = &.{"demo_termcap.c"},
+            .macos = false,
         },
         .{
             .name = "worm",
@@ -607,6 +626,7 @@ pub const Tests = struct {
         .{
             .name = "padview",
             .files = &.{ "padview.c", "popup_msg.c" },
+            .macos = false,
         },
         .{
             .name = "extended_color",
@@ -619,6 +639,7 @@ pub const Tests = struct {
         .{
             .name = "tclock",
             .files = &.{"tclock.c"},
+            .macos = false,
         },
     };
 };
@@ -986,6 +1007,15 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .windows => null,
         else => 1,
     };
+    const only_posix_zero: ?i64 = switch (target.result.os.tag) {
+        .windows => 0,
+        else => 1,
+    };
+
+    const only_windows = @as(?i64, switch (target.result.os.tag) {
+        .windows => 1,
+        else => null,
+    });
 
     return b.addConfigHeader(.{
         .style = .blank,
@@ -1023,7 +1053,7 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .HAVE_INTTYPES_H = 1,
         .HAVE_IOSTREAM = 1,
         .HAVE_ISASCII = 1,
-        .HAVE_LANGINFO_CODESET = 1,
+        .HAVE_LANGINFO_CODESET = only_posix,
         .HAVE_LIBFORM = 1,
         .HAVE_LIBMENU = 1,
         .HAVE_LIBPANEL = 1,
@@ -1048,13 +1078,13 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .HAVE_REMOVE = 1,
         .HAVE_RESIZE_TERM = 1,
         .HAVE_RESIZETERM = 1,
-        .HAVE_SELECT = 1,
+        .HAVE_SELECT = only_posix,
         .HAVE_SETBUF = 1,
         .HAVE_SETBUFFER = 1,
         .HAVE_SETENV = 1,
         .HAVE_SETFSUID = 1,
         .HAVE_SETVBUF = 1,
-        .HAVE_SIGACTION = 1,
+        .HAVE_SIGACTION = only_posix,
         .HAVE_SIZECHANGE = only_posix,
         .HAVE_SLK_COLOR = 1,
         .HAVE_SNPRINTF = 1,
@@ -1068,7 +1098,7 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .HAVE_SYS_IOCTL_H = only_posix,
         .HAVE_SYS_PARAM_H = 1,
         .HAVE_SYS_POLL_H = only_posix,
-        .HAVE_SYS_SELECT_H = 1,
+        .HAVE_SYS_SELECT_H = only_posix,
         .HAVE_SYS_STAT_H = 1,
         .HAVE_SYS_TIME_H = 1,
         .HAVE_SYS_TIME_SELECT = 1,
@@ -1078,8 +1108,8 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .HAVE_TCGETATTR = 1,
         .HAVE_TCGETPGRP = 1,
         .HAVE_TERM_ENTRY_H = 1,
-        .HAVE_TERMIO_H = only_posix,
-        .HAVE_TERMIOS_H = only_posix,
+        .HAVE_TERMIO_H = only_posix_zero,
+        .HAVE_TERMIOS_H = only_posix_zero,
         .HAVE_TIMES = 1,
         .HAVE_TPUTS_SP = 1,
         .HAVE_TSEARCH = 1,
@@ -1104,7 +1134,10 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .NCURSES_EXT_FUNCS = 1,
         .NCURSES_EXT_PUTWIN = 1,
         .NCURSES_NO_PADDING = 1,
-        .NCURSES_OSPEED_COMPAT = 1,
+        .NCURSES_OSPEED_COMPAT = @as(u8, switch (target.result.os.tag) {
+            .macos => 0,
+            else => 1,
+        }),
         .NCURSES_PATCHDATE = ncurses_version.patch,
         .NCURSES_PATHSEP = @as(u8, switch (target.result.os.tag) {
             .windows => ';',
@@ -1137,10 +1170,16 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .USE_SIGWINCH = 1,
         .USE_TERM_DRIVER = 1,
         .USE_WIDEC_SUPPORT = 0,
-        .USE_XTERM_PTY = 1,
-        .EXP_WIN32_DRIVER = @as(?i64, switch (target.result.os.tag) {
-            .windows => 1,
-            else => null,
-        }),
+        .USE_XTERM_PTY = only_posix,
+        // .NCURSES_WGETCH_EVENTS = 0,
+        .EXP_WIN32_DRIVER = only_windows,
+        // .USE_WIN32CON_DRIVER = @as(?i64, switch (target.result.os.tag) {
+        //     .windows => 1,
+        //     else => null,
+        // }),
+        // .WINVER = @as(?i64, switch (target.result.os.tag) {
+        //     .windows => 0x0600,
+        //     else => null,
+        // }),
     });
 }
