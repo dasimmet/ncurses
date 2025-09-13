@@ -39,7 +39,6 @@ pub fn build(b: *std.Build) void {
         .files = &.{
             "comp_userdefs.c",
             "comp_captab.c",
-            "lib_gen.c",
         },
     });
 
@@ -231,6 +230,27 @@ pub fn build(b: *std.Build) void {
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
 
+    if (b.option(bool, "use_gen_libc", "") orelse false) {
+        const awk_dep = b.dependency("awk", .{
+            .target = b.graph.host,
+            .optimize = .ReleaseSmall,
+        });
+
+        const lib_gen = runMakeLibGenC(b, curses_h, awk_dep.artifact("awk").getEmittedBin());
+        modncurses.addCSourceFile(.{
+            .file = lib_gen,
+            .flags = Sources.flags,
+        });
+    } else {
+        modncurses.addCSourceFiles(.{
+            .root = b.path("src/c"),
+            .flags = Sources.flags,
+            .files = &.{
+                "lib_gen.c",
+            },
+        });
+    }
+
     const fallback_c = runMakeFallbackC(b, &.{});
     b.step("fallback", "").dependOn(&b.addInstallFile(
         fallback_c,
@@ -406,6 +426,7 @@ pub fn runMakeKeyDefs(b: *std.Build, src: []const std.Build.LazyPath, basename: 
 }
 
 /// generates fallback.c
+/// replaces "./ncurses/tinfo/MKfallback.sh $(TERMINFO) $(TERMINFO_SRC) "$(TIC_PATH)" "$(INFOCMP_PATH)" $(FALLBACK_LIST)"
 pub fn runMakeFallbackC(b: *std.Build, src: []const std.Build.LazyPath) std.Build.LazyPath {
     const exe = b.addExecutable(.{
         .name = "MakeFallbackC",
@@ -419,6 +440,25 @@ pub fn runMakeFallbackC(b: *std.Build, src: []const std.Build.LazyPath) std.Buil
     for (src) |s| {
         run.addFileArg(s);
     }
+    return out;
+}
+
+/// generates lib_gen.c
+/// replaces:
+/// CC="zig 0.15.1 cc -E -DHAVE_CONFIG_H -DBUILDING_NCURSES -I../ncurses -I. -I../include -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DNDEBUG"
+/// ./base/MKlib_gen.sh "$CC" "mawk" generated <../include/curses.h
+pub fn runMakeLibGenC(b: *std.Build, curses_h: std.Build.LazyPath, awk: std.Build.LazyPath) std.Build.LazyPath {
+    const exe = b.addExecutable(.{
+        .name = "MakeFallbackC",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/MakeLibGenC.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+    const out = run.addOutputFileArg("lib_gen.c");
+    run.addFileArg(curses_h);
+    run.addFileArg(awk);
     return out;
 }
 
