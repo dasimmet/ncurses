@@ -9,8 +9,8 @@
             .hash = "N-V-__8AAHWSEwGDuK7Qx8Q-Mx6pjeYBBX9g8I6uJ9r5DZ9L",
         },
         .awk = .{
-            .url = "git+https://github.com/dasimmet/zig-awk.git#92144c3ea0cf9094312d22a963353fdcc762fb28",
-            .hash = "awk-0.0.1-NbEIKjEOAACZJkoe0eOD4uW2IMykiflRvuiPsEDM3kOy",
+            .url = "git+https://github.com/dasimmet/zig-awk.git#ba0b266aa73960fbb7ccaad99793850af9bbc4fe",
+            .hash = "awk-1.3.4-20250131-NbEIKrAeAAB565hDroVE1bUkG8R69e_RrP3H7SKR8Lzp",
         },
     },
     .paths = .{

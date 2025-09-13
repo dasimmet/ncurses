@@ -20,10 +20,19 @@ jobs:
       - name: Set up Zig
         uses: mlugg/setup-zig@v2.0.5
 
-      - name: Run `build`
-        run: zig build -Dtarget=x86_64-linux-musl install demo
+      - name: Run fmt
+        run: zig build fmt
 
+      - name: check git diff
+        run: git diff --exit-code
+
+      - name: Run `build` linux
+        run: zig build -Dtarget=x86_64-linux-musl --prefix zig-out/x86_64-linux-musl install demo
+
+      - name: check git diff
+        run: git diff --exit-code
+  
       - uses: actions/upload-artifact@v4
         with:
-          name: ncurses
-          path: zig-out/*
+          name: ncurses-x86_64-linux-musl
+          path: zig-out/x86_64-linux-musl/*

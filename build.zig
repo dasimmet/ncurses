@@ -86,14 +86,14 @@ pub fn build(b: *std.Build) void {
         if (b.option(bool, "dynamic", "build a shared library")) |opt| {
             break :blk switch (opt) {
                 true => .dynamic,
-                false => .static
+                false => .static,
             };
         } else break :blk .static;
     };
     const libncurses = b.addLibrary(.{
         .name = "ncurses",
         .root_module = modncurses,
-        .linkage = linkage, 
+        .linkage = linkage,
     });
     libncurses.installLibraryHeaders(libncurses);
     inline for (&.{
@@ -335,6 +335,15 @@ pub fn build(b: *std.Build) void {
             .flags = Sources.flags,
         });
     }
+
+    const fmt = b.addFmt(.{
+        .paths = &.{
+            "build.zig",
+            "build.zig.zon",
+            "src",
+        },
+    });
+    b.step("fmt", "zig fmt").dependOn(&fmt.step);
 }
 
 /// runs awk prgram and captures stdout
