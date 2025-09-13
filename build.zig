@@ -39,7 +39,6 @@ pub fn build(b: *std.Build) void {
         .files = &.{
             "comp_userdefs.c",
             "comp_captab.c",
-            "fallback.c",
             "lib_gen.c",
         },
     });
