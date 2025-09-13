@@ -231,7 +231,16 @@ pub fn build(b: *std.Build) void {
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
 
-    // const fallback_c = runMakeFallbackC(b, &.{});
+    const fallback_c = runMakeFallbackC(b, &.{});
+    b.step("fallback", "").dependOn(&b.addInstallFile(
+        fallback_c,
+        "fallback.c",
+    ).step);
+
+    modncurses.addCSourceFile(.{
+        .file = fallback_c,
+        .flags = Sources.flags,
+    });
 
     const makekeys = b.addExecutable(.{
         .name = "makekeys",
