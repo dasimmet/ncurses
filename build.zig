@@ -231,6 +231,8 @@ pub fn build(b: *std.Build) void {
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
 
+    // const fallback_c = runMakeFallbackC(b, &.{});
+
     const makekeys = b.addExecutable(.{
         .name = "makekeys",
         .root_module = b.createModule(.{
@@ -388,6 +390,23 @@ pub fn runMakeKeyDefs(b: *std.Build, src: []const std.Build.LazyPath, basename: 
     });
     const run = b.addRunArtifact(exe);
     const out = run.addOutputFileArg(basename);
+    for (src) |s| {
+        run.addFileArg(s);
+    }
+    return out;
+}
+
+/// generates fallback.c
+pub fn runMakeFallbackC(b: *std.Build, src: []const std.Build.LazyPath) std.Build.LazyPath {
+    const exe = b.addExecutable(.{
+        .name = "MakeFallbackC",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/MakeFallbackC.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+    const out = run.addOutputFileArg("fallback.c");
     for (src) |s| {
         run.addFileArg(s);
     }
