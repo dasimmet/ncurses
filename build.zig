@@ -114,7 +114,6 @@ pub fn build(b: *std.Build) void {
     modncurses.addCMacro("_XOPEN_SOURCE", "600");
     modncurses.addCMacro("HAVE_CONFIG_H", "1");
     modncurses.addCMacro("NCURSES_STATIC", "");
-    // modncurses.addCMacro("TRACE", "");
 
     libncurses.installHeadersDirectory(ncurses.path("include"), "", .{});
 
@@ -319,6 +318,11 @@ pub fn build(b: *std.Build) void {
                     .optimize = optimize,
                 }),
             });
+            switch (linkage) {
+                .static => demo.root_module.addCMacro("NCURSES_STATIC", ""),
+                .dynamic => {},
+            }
+
             demo.addCSourceFiles(.{
                 .root = ncurses.path(testf.dir),
                 .files = testf.files,
