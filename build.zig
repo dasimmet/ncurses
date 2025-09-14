@@ -14,48 +14,67 @@ pub const ncurses_version = struct {
     }
 };
 
+pub const Options = struct {
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    widechar: bool,
+    @"opaque": bool,
+    linkage: std.builtin.LinkMode,
+
+    pub fn only_posix(self: @This()) u1 {
+        return switch (self.target.result.os.tag) {
+            .windows => 0,
+            else => 1,
+        };
+    }
+
+    pub fn only_posix_null(self: @This()) ?u1 {
+        return switch (self.target.result.os.tag) {
+            .windows => null,
+            else => 1,
+        };
+    }
+
+    pub fn nc_opaque(self: @This()) u1 {
+        return if (self.@"opaque") 1 else 0;
+    }
+
+    pub fn only_windows_null(self: @This()) ?u1 {
+        return switch (self.target.result.os.tag) {
+            .windows => 1,
+            else => null,
+        };
+    }
+};
+
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
-    const no_widechar = b.option(bool, "no-widechar", "disable widechar support") orelse false;
-    const widechar = !no_widechar;
-
-    const no_opaque = b.option(bool, "no-opaque", "disable opaque support") orelse false;
-    const nc_opaque: u1 = if (no_opaque) 0 else 1;
-
-    const only_posix_zero: u1 = switch (target.result.os.tag) {
-        .windows => 0,
-        else => 1,
+    const options: Options = .{
+        .target = b.standardTargetOptions(.{}),
+        .optimize = b.standardOptimizeOption(.{}),
+        .widechar = !(b.option(bool, "no-opaque", "disable opaque support") orelse false),
+        .@"opaque" = !(b.option(bool, "no-widechar", "disable widechar support") orelse false),
+        .linkage = b.option(std.builtin.LinkMode, "linkage", "linkmode for the library") orelse .static,
     };
 
     const headers_step = b.step("headers", "install the zig generated headers");
 
     const ncurses = b.dependency("ncurses", .{});
     const modncurses = b.addModule("ncurses", .{
-        .target = target,
-        .optimize = optimize,
+        .target = options.target,
+        .optimize = options.optimize,
         .link_libc = true,
     });
-    const linkage: std.builtin.LinkMode = blk: {
-        if (b.option(bool, "dynamic", "build a shared library")) |opt| {
-            break :blk switch (opt) {
-                true => .dynamic,
-                false => .static,
-            };
-        } else break :blk .static;
-    };
     const libncurses = b.addLibrary(.{
         .name = "ncurses",
         .root_module = modncurses,
-        .linkage = linkage,
+        .linkage = options.linkage,
     });
     b.installArtifact(libncurses);
 
     inline for (Sources.all) |source| {
         modncurses.addCSourceFiles(.{
             .root = ncurses.path(source.dir),
-            .flags = Sources.flags(target),
+            .flags = Sources.flags(options.target),
             .files = source.files,
         });
         modncurses.addIncludePath(ncurses.path(source.dir));
@@ -63,18 +82,18 @@ pub fn build(b: *std.Build) void {
             libncurses.installHeader(ncurses.path(b.pathJoin(&.{ source.dir, header })), header);
         }
     }
-    if (widechar) {
+    if (options.widechar) {
         modncurses.addCSourceFiles(.{
             .root = ncurses.path(Sources.widechar.dir),
-            .flags = Sources.flags(target),
+            .flags = Sources.flags(options.target),
             .files = Sources.widechar.files,
         });
         modncurses.addIncludePath(ncurses.path(Sources.widechar.dir));
     }
-    if (target.result.os.tag == .windows) {
+    if (options.target.result.os.tag == .windows) {
         modncurses.addCSourceFiles(.{
             .root = ncurses.path("ncurses/win32con"),
-            .flags = Sources.flags(target),
+            .flags = Sources.flags(options.target),
             .files = &.{
                 // "win_driver.c",
                 // "gettimeofday.c",
@@ -86,7 +105,7 @@ pub fn build(b: *std.Build) void {
 
     modncurses.addCSourceFiles(.{
         .root = b.path("src/c"),
-        .flags = Sources.flags(target),
+        .flags = Sources.flags(options.target),
         .files = &.{
             "comp_userdefs.c",
             "comp_captab.c",
@@ -100,7 +119,7 @@ pub fn build(b: *std.Build) void {
             &.{b.path("src/c/keys.list")},
             "lib_keyname.c",
         ),
-        .flags = Sources.flags(target),
+        .flags = Sources.flags(options.target),
     });
 
     modncurses.addCSourceFile(.{
@@ -110,7 +129,7 @@ pub fn build(b: *std.Build) void {
             &.{},
             "unctrl.c",
         ),
-        .flags = Sources.flags(target),
+        .flags = Sources.flags(options.target),
     });
 
     modncurses.addCSourceFile(.{
@@ -120,7 +139,7 @@ pub fn build(b: *std.Build) void {
             &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
             "codes.c",
         ),
-        .flags = Sources.flags(target),
+        .flags = Sources.flags(options.target),
     });
 
     modncurses.addIncludePath(ncurses.path("include"));
@@ -142,7 +161,7 @@ pub fn build(b: *std.Build) void {
     libncurses.installConfigHeader(dll_h);
     modncurses.addIncludePath(b.path("src/c"));
 
-    const ncurses_zig_defs = ncurses_defs_header(b, target, widechar);
+    const ncurses_zig_defs = ncurses_defs_header(b, options);
 
     const ncurses_cfg_h = runConfigHeaderLazyPath(
         b,
@@ -208,10 +227,10 @@ pub fn build(b: *std.Build) void {
         .HAVE_STDNORETURN_H = 0,
         .NCURSES_CONST = "const",
         .NCURSES_INLINE = "inline",
-        .NCURSES_OPAQUE = nc_opaque,
-        .NCURSES_OPAQUE_FORM = nc_opaque,
-        .NCURSES_OPAQUE_MENU = nc_opaque,
-        .NCURSES_OPAQUE_PANEL = nc_opaque,
+        .NCURSES_OPAQUE = options.nc_opaque(),
+        .NCURSES_OPAQUE_FORM = options.nc_opaque(),
+        .NCURSES_OPAQUE_MENU = options.nc_opaque(),
+        .NCURSES_OPAQUE_PANEL = options.nc_opaque(),
         .NCURSES_WATTR_MACROS = 0,
         .cf_cv_enable_reentrant = 0,
         .BROKEN_LINKER = 0,
@@ -220,13 +239,13 @@ pub fn build(b: *std.Build) void {
         .NCURSES_TPARM_VARARGS = 1,
         .NCURSES_TPARM_ARG = "intptr_t",
         .NCURSES_WCWIDTH_GRAPHICS = 1,
-        .NCURSES_CH_T = switch (widechar) {
+        .NCURSES_CH_T = switch (options.widechar) {
             true => "cchar_t",
             false => "chtype",
         },
         .cf_cv_enable_lp64 = 1,
         .cf_cv_header_stdbool_h = 1,
-        .cf_cv_typeof_chtype = switch (widechar) {
+        .cf_cv_typeof_chtype = switch (options.widechar) {
             true => "long",
             false => "uint32_t",
         },
@@ -235,8 +254,8 @@ pub fn build(b: *std.Build) void {
         .USE_CXX_BOOL = "defined(__cplusplus)",
         .NCURSES_EXT_FUNCS = 1,
         .NCURSES_LIBUTF8 = 0,
-        .NEED_WCHAR_H = @as(u1, if (widechar) 1 else 0),
-        .NCURSES_WCHAR_T = @as(u1, if (widechar) 1 else 0),
+        .NEED_WCHAR_H = @as(u1, if (options.widechar) 1 else 0),
+        .NCURSES_WCHAR_T = @as(u1, if (options.widechar) 1 else 0),
         .NCURSES_OK_WCHAR_T = "uint32_t",
         .NCURSES_WINT_T = 0,
         .NCURSES_EXT_COLORS = 1,
@@ -247,7 +266,7 @@ pub fn build(b: *std.Build) void {
         .NCURSES_SP_FUNCS = 1,
     });
 
-    const curses_h_parts: []const FileOrString = switch (widechar) {
+    const curses_h_parts: []const FileOrString = switch (options.widechar) {
         true => &.{
             .file(curses_tmp_h.getOutput()),
             .file(runMakeKeyDefs(b, &.{
@@ -280,12 +299,12 @@ pub fn build(b: *std.Build) void {
         const lib_gen = runMakeLibGenC(b, curses_h, awk_dep.artifact("awk").getEmittedBin());
         modncurses.addCSourceFile(.{
             .file = lib_gen,
-            .flags = Sources.flags(target),
+            .flags = Sources.flags(options.target),
         });
     } else {
         modncurses.addCSourceFiles(.{
             .root = b.path("src/c"),
-            .flags = Sources.flags(target),
+            .flags = Sources.flags(options.target),
             .files = &.{
                 "lib_gen.c",
             },
@@ -300,7 +319,7 @@ pub fn build(b: *std.Build) void {
 
     modncurses.addCSourceFile(.{
         .file = fallback_c,
-        .flags = Sources.flags(target),
+        .flags = Sources.flags(options.target),
     });
 
     const makekeys = b.addExecutable(.{
@@ -320,7 +339,7 @@ pub fn build(b: *std.Build) void {
     makekeys.addIncludePath(ncurses.path("ncurses"));
     makekeys.addCSourceFile(.{
         .file = ncurses.path("ncurses/tinfo/make_keys.c"),
-        .flags = Sources.flags(target),
+        .flags = Sources.flags(options.target),
     });
     const run_mkkeys = b.addRunArtifact(makekeys);
     run_mkkeys.addFileArg(b.path("src/c/keys.list"));
@@ -337,7 +356,7 @@ pub fn build(b: *std.Build) void {
         const demo_step = b.step("demo", "build demos");
         for (Tests.all) |testf| {
             if (!testf.macos) {
-                switch (target.result.os.tag) {
+                switch (options.target.result.os.tag) {
                     .macos => continue,
                     else => {},
                 }
@@ -345,11 +364,11 @@ pub fn build(b: *std.Build) void {
             const demo = b.addExecutable(.{
                 .name = testf.name,
                 .root_module = b.createModule(.{
-                    .target = target,
-                    .optimize = optimize,
+                    .target = options.target,
+                    .optimize = options.optimize,
                 }),
             });
-            switch (linkage) {
+            switch (options.linkage) {
                 .static => demo.root_module.addCMacro("NCURSES_STATIC", ""),
                 .dynamic => {},
             }
@@ -357,7 +376,7 @@ pub fn build(b: *std.Build) void {
             demo.addCSourceFiles(.{
                 .root = ncurses.path(testf.dir),
                 .files = testf.files,
-                .flags = Sources.flags(target),
+                .flags = Sources.flags(options.target),
             });
             demo.linkLibrary(libncurses);
             demo.addIncludePath(ncurses.path(testf.dir));
@@ -379,15 +398,15 @@ pub fn build(b: *std.Build) void {
         }, .{
             .NCURSES_MAJOR = ncurses_version.major,
             .NCURSES_MINOR = ncurses_version.minor,
-            .HAVE_TERMIO_H = only_posix_zero,
-            .HAVE_TERMIOS_H = only_posix_zero,
+            .HAVE_TERMIO_H = options.only_posix(),
+            .HAVE_TERMIOS_H = options.only_posix(),
             .NCURSES_TPARM_VARARGS = 1,
             .BROKEN_LINKER = 0,
             .cf_cv_enable_reentrant = 0,
             .HAVE_TCGETATTR = 1,
             .NCURSES_SBOOL = "char",
             .NCURSES_EXT_COLORS = 1,
-            .EXP_WIN32_DRIVER = @as(u1, switch (target.result.os.tag) {
+            .EXP_WIN32_DRIVER = @as(u1, switch (options.target.result.os.tag) {
                 .windows => 1,
                 else => 0,
             }),
@@ -420,7 +439,7 @@ pub fn build(b: *std.Build) void {
         makekeys.addIncludePath(names_c.dirname());
         modncurses.addCSourceFile(.{
             .file = names_c,
-            .flags = Sources.flags(target),
+            .flags = Sources.flags(options.target),
         });
     }
 
@@ -1049,23 +1068,8 @@ pub const Sources = struct {
 
 pub fn ncurses_defs_header(
     b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    widechar: bool,
+    options: Options,
 ) *std.Build.Step.ConfigHeader {
-    const only_posix: ?u1 = switch (target.result.os.tag) {
-        .windows => null,
-        else => 1,
-    };
-    const only_posix_zero: ?u1 = switch (target.result.os.tag) {
-        .windows => 0,
-        else => 1,
-    };
-
-    const only_windows: ?u1 = switch (target.result.os.tag) {
-        .windows => 1,
-        else => null,
-    };
-
     return b.addConfigHeader(.{
         .style = .blank,
         .include_path = "ncurses_zig_defs.h",
@@ -1104,12 +1108,12 @@ pub fn ncurses_defs_header(
         .HAVE_INTTYPES_H = 1,
         .HAVE_IOSTREAM = 1,
         .HAVE_ISASCII = 1,
-        .HAVE_LANGINFO_CODESET = only_posix,
+        .HAVE_LANGINFO_CODESET = options.only_posix_null(),
         .HAVE_LIBFORM = 1,
         .HAVE_LIBMENU = 1,
         .HAVE_LIBPANEL = 1,
         .HAVE_LIMITS_H = 1,
-        .HAVE_LINK = only_posix_zero,
+        .HAVE_LINK = options.only_posix(),
         .HAVE_LOCALE_H = 1,
         .HAVE_LOCALECONV = 1,
         .HAVE_LONG_FILE_NAMES = 1,
@@ -1127,21 +1131,21 @@ pub fn ncurses_defs_header(
         .HAVE_NAPMS = 1,
         .HAVE_NC_ALLOC_H = 1,
         .HAVE_PANEL_H = 1,
-        .HAVE_POLL = only_posix,
-        .HAVE_POLL_H = only_posix,
+        .HAVE_POLL = options.only_posix_null(),
+        .HAVE_POLL_H = options.only_posix_null(),
         .HAVE_PUTENV = 1,
-        .HAVE_REGEX_H_FUNCS = only_posix,
+        .HAVE_REGEX_H_FUNCS = options.only_posix_null(),
         .HAVE_REMOVE = 1,
         .HAVE_RESIZE_TERM = 1,
         .HAVE_RESIZETERM = 1,
-        .HAVE_SELECT = only_posix,
+        .HAVE_SELECT = options.only_posix_null(),
         .HAVE_SETBUF = 1,
         .HAVE_SETBUFFER = 1,
-        .HAVE_SETENV = only_posix,
+        .HAVE_SETENV = options.only_posix_null(),
         .HAVE_SETFSUID = 1,
         .HAVE_SETVBUF = 1,
-        .HAVE_SIGACTION = only_posix,
-        .HAVE_SIZECHANGE = only_posix,
+        .HAVE_SIGACTION = options.only_posix_null(),
+        .HAVE_SIZECHANGE = options.only_posix_null(),
         .HAVE_SLK_COLOR = 1,
         .HAVE_SNPRINTF = 1,
         .HAVE_STDINT_H = 1,
@@ -1151,10 +1155,10 @@ pub fn ncurses_defs_header(
         .HAVE_STRINGS_H = 1,
         .HAVE_STRSTR = 1,
         .HAVE_SYMLINK = 1,
-        .HAVE_SYS_IOCTL_H = only_posix,
+        .HAVE_SYS_IOCTL_H = options.only_posix_null(),
         .HAVE_SYS_PARAM_H = 1,
-        .HAVE_SYS_POLL_H = only_posix,
-        .HAVE_SYS_SELECT_H = only_posix,
+        .HAVE_SYS_POLL_H = options.only_posix_null(),
+        .HAVE_SYS_SELECT_H = options.only_posix_null(),
         .HAVE_SYS_STAT_H = 1,
         .HAVE_SYS_TIME_H = 1,
         .HAVE_SYS_TIME_SELECT = 1,
@@ -1165,7 +1169,7 @@ pub fn ncurses_defs_header(
         .HAVE_TCGETPGRP = 1,
         .HAVE_TERM_ENTRY_H = 1,
         .HAVE_TERMIO_H = 1,
-        .HAVE_TERMIOS_H = only_posix_zero,
+        .HAVE_TERMIOS_H = options.only_posix(),
         .HAVE_TIMES = 1,
         .HAVE_TPUTS_SP = 1,
         .HAVE_TSEARCH = 1,
@@ -1183,7 +1187,7 @@ pub fn ncurses_defs_header(
         .HAVE_WCTYPE_H = 1,
         .HAVE_WMEMCHR = 1,
         .HAVE_WORKING_FORK = 1,
-        .HAVE_WORKING_POLL = only_posix,
+        .HAVE_WORKING_POLL = options.only_posix_null(),
         .HAVE_WORKING_VFORK = 1,
         .HAVE_WRESIZE = 1,
         .IOSTREAM_NAMESPACE = 1,
@@ -1191,19 +1195,19 @@ pub fn ncurses_defs_header(
         .NCURSES_EXT_FUNCS = 1,
         .NCURSES_EXT_PUTWIN = 1,
         .NCURSES_NO_PADDING = 1,
-        .NCURSES_OSPEED_COMPAT = @as(u1, switch (target.result.os.tag) {
+        .NCURSES_OSPEED_COMPAT = @as(u1, switch (options.target.result.os.tag) {
             .macos => 0,
             else => 1,
         }),
         .NCURSES_PATCHDATE = ncurses_version.patch,
-        .NCURSES_PATHSEP = @as(u8, switch (target.result.os.tag) {
+        .NCURSES_PATHSEP = @as(u8, switch (options.target.result.os.tag) {
             .windows => ';',
             else => ':',
         }),
         .NCURSES_SP_FUNCS = 1,
         .NCURSES_VERSION = zon_version,
         .NCURSES_VERSION_STRING = zon_version,
-        .NCURSES_WIDECHAR = @as(u1, switch (widechar) {
+        .NCURSES_WIDECHAR = @as(u1, switch (options.widechar) {
             true => 1,
             false => 0,
         }),
@@ -1230,13 +1234,13 @@ pub fn ncurses_defs_header(
         .USE_SIGWINCH = 1,
         .USE_STRING_HACKS = 1,
         .USE_TERM_DRIVER = 1,
-        .USE_WIDEC_SUPPORT = @as(u1, switch (widechar) {
+        .USE_WIDEC_SUPPORT = @as(u1, switch (options.widechar) {
             true => 1,
             false => 0,
         }),
-        .USE_XTERM_PTY = only_posix,
-        .EXP_WIN32_DRIVER = only_windows,
-        .USE_WIN32CON_DRIVER = @as(?u1, switch (target.result.os.tag) {
+        .USE_XTERM_PTY = options.only_posix_null(),
+        .EXP_WIN32_DRIVER = options.only_windows_null(),
+        .USE_WIN32CON_DRIVER = @as(?u1, switch (options.target.result.os.tag) {
             .windows => 1,
             else => null,
         }),
