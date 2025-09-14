@@ -1,6 +1,6 @@
 const std = @import("std");
-const zon_version: []const u8 = @import("build.zig.zon").version;
 const ConfigHeaderNoComment = @import("src/ConfigHeaderNoComment.zig");
+const zon_version: []const u8 = @import("build.zig.zon").version;
 const zon_parsed_version = std.SemanticVersion.parse(zon_version) catch unreachable;
 
 pub const ncurses_version = struct {
@@ -18,6 +18,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const headers_step = b.step("headers", "install the zig generated headers");
+    const no_widechar = b.option(bool, "no-widechar", "disable widechar support") orelse false;
+    const widechar = !no_widechar;
 
     const only_posix_zero: i64 = switch (target.result.os.tag) {
         .windows => 0,
@@ -55,6 +57,14 @@ pub fn build(b: *std.Build) void {
         for (source.installheaders) |header| {
             libncurses.installHeader(ncurses.path(b.pathJoin(&.{ source.dir, header })), header);
         }
+    }
+    if (widechar) {
+        modncurses.addCSourceFiles(.{
+            .root = ncurses.path(Sources.widechar.dir),
+            .flags = Sources.flags(target),
+            .files = Sources.widechar.files,
+        });
+        modncurses.addIncludePath(ncurses.path(Sources.widechar.dir));
     }
     if (target.result.os.tag == .windows) {
         modncurses.addCSourceFiles(.{
@@ -127,7 +137,7 @@ pub fn build(b: *std.Build) void {
     libncurses.installConfigHeader(dll_h);
     modncurses.addIncludePath(b.path("src/c"));
 
-    const ncurses_zig_defs = ncurses_defs_header(b, target);
+    const ncurses_zig_defs = ncurses_defs_header(b, target, widechar);
 
     const ncurses_cfg_h = runConfigHeaderLazyPath(
         b,
@@ -205,18 +215,24 @@ pub fn build(b: *std.Build) void {
         .NCURSES_TPARM_VARARGS = 1,
         .NCURSES_TPARM_ARG = "intptr_t",
         .NCURSES_WCWIDTH_GRAPHICS = 1,
-        .NCURSES_CH_T = "chtype",
+        .NCURSES_CH_T = switch (widechar) {
+            true => "cchar_t",
+            false => "chtype",
+        },
         .cf_cv_enable_lp64 = 1,
         .cf_cv_header_stdbool_h = 1,
-        .cf_cv_typeof_chtype = "uint32_t",
+        .cf_cv_typeof_chtype = switch (widechar) {
+            true => "long",
+            false => "uint32_t",
+        },
         .cf_cv_typeof_mmask_t = "uint32_t",
         .cf_cv_type_of_bool = "unsigned char",
         .USE_CXX_BOOL = "defined(__cplusplus)",
         .NCURSES_EXT_FUNCS = 1,
         .NCURSES_LIBUTF8 = 0,
-        .NEED_WCHAR_H = 0,
-        .NCURSES_WCHAR_T = 0,
-        .NCURSES_OK_WCHAR_T = "",
+        .NEED_WCHAR_H = @as(u1, if (widechar) 1 else 0),
+        .NCURSES_WCHAR_T = @as(u1, if (widechar) 1 else 0),
+        .NCURSES_OK_WCHAR_T = "long",
         .NCURSES_WINT_T = 0,
         .NCURSES_EXT_COLORS = 0,
         .cf_cv_1UL = "1U",
@@ -226,13 +242,24 @@ pub fn build(b: *std.Build) void {
         .NCURSES_SP_FUNCS = 1,
     });
 
-    const curses_h = runConcatLazyPath(b, &.{
-        curses_tmp_h.getOutput(),
-        runMakeKeyDefs(b, &.{
-            ncurses.path("include/Caps"),
-            ncurses.path("include/Caps-ncurses"),
-        }, "key_defs_tmp.h"),
-        ncurses.path("include/curses.tail"),
+    const curses_h = runConcatLazyPath(b, switch (widechar) {
+        true => &.{
+            curses_tmp_h.getOutput(),
+            runMakeKeyDefs(b, &.{
+                ncurses.path("include/Caps"),
+                ncurses.path("include/Caps-ncurses"),
+            }, "key_defs_tmp.h"),
+            ncurses.path("include/curses.wide"), //add in widechar headers
+            ncurses.path("include/curses.tail"),
+        },
+        false => &.{
+            curses_tmp_h.getOutput(),
+            runMakeKeyDefs(b, &.{
+                ncurses.path("include/Caps"),
+                ncurses.path("include/Caps-ncurses"),
+            }, "key_defs_tmp.h"),
+            ncurses.path("include/curses.tail"),
+        },
     }, "curses.h");
     headers_step.dependOn(
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
@@ -487,6 +514,23 @@ pub fn runMakeLibGenC(b: *std.Build, curses_h: std.Build.LazyPath, awk: std.Buil
     return out;
 }
 
+pub const FileOrString = union(enum) {
+    filepath: std.Build.LazyPath,
+    string: []const u8,
+    pub fn file(filepath: std.Build.LazyPath) @This() {
+        return .{ .filepath = filepath };
+    }
+    pub fn str(string: []const u8) @This() {
+        return .{ .string = string };
+    }
+    pub fn addArg(self: @This(), run: std.Build.Step.Run) void {
+        switch (self) {
+            .filepath => |fp| run.addPrefixedFileArg("file://", fp),
+            .string => |string| run.addArg(run.step.owner.fmt("string://{s}", .{string})),
+        }
+    }
+};
+
 /// concatenates a slice of files given in the form of a lazypath
 pub fn runConcatLazyPath(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const exe = b.addExecutable(.{
@@ -504,8 +548,8 @@ pub fn runConcatLazyPath(b: *std.Build, src: []const std.Build.LazyPath, basenam
     return out;
 }
 
-/// replaces keys in a file like configheader, but accepts lazypaths to files as arguments
-/// keys for replacement have no particular syntax
+/// Replaces keys in a file like configheader, but accepts lazypaths to files as arguments
+/// Keys for replacement have no particular syntax.
 pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename: []const u8, args: anytype) std.Build.LazyPath {
     const exe = b.addExecutable(.{
         .name = "ConfigHeaderLazyPath",
@@ -617,7 +661,7 @@ pub const Tests = struct {
         },
         .{
             .name = "combine",
-            .files = &.{"combine.c"},
+            .files = &.{ "combine.c", "dump_window.c", "popup_msg.c" },
         },
         .{
             .name = "padview",
@@ -654,7 +698,6 @@ pub const Sources = struct {
         form,
         trace,
         tinfo,
-        // widechar,
         tty,
     };
     pub fn flags(target: std.Build.ResolvedTarget) []const []const u8 {
@@ -662,6 +705,7 @@ pub const Sources = struct {
             .windows => &(Flags.common ++ .{
                 "-Wno-error=unused-parameter",
                 "-Wno-error=dll-attribute-on-redeclaration",
+                "-Wno-error=tautological-constant-compare",
                 // "-Wno-error=ignored-attributes",
             }),
             else => &Flags.common,
@@ -674,6 +718,7 @@ pub const Sources = struct {
             "-Wextra",
             "-Werror",
             "-pedantic",
+            "-Wno-error=unused-variable",
             "-Wno-error=unused-but-set-variable",
             "-fno-strict-overflow",
         };
@@ -993,7 +1038,11 @@ pub const Sources = struct {
     };
 };
 
-pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.ConfigHeader {
+pub fn ncurses_defs_header(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    widechar: bool,
+) *std.Build.Step.ConfigHeader {
     const only_posix: ?i64 = switch (target.result.os.tag) {
         .windows => null,
         else => 1,
@@ -1055,6 +1104,11 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .HAVE_LONG_FILE_NAMES = 1,
         .HAVE_MATH_FUNCS = 1,
         .HAVE_MATH_H = 1,
+        .HAVE_WCTOB = 1,
+        .HAVE_MBTOWC = 1,
+        .HAVE_MBLEN = 1,
+        .HAVE_MBRTOWC = 1,
+        .HAVE_MBRLEN = 1,
         .HAVE_MEMORY_H = 1,
         .HAVE_MENU_H = 1,
         .HAVE_MKSTEMP = 1,
@@ -1116,6 +1170,7 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .HAVE_VSNPRINTF = 1,
         .HAVE_VSSCANF = 1,
         .HAVE_WCTYPE_H = 1,
+        .HAVE_WMEMCHR = 1,
         .HAVE_WORKING_FORK = 1,
         .HAVE_WORKING_POLL = only_posix,
         .HAVE_WORKING_VFORK = 1,
@@ -1137,7 +1192,10 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .NCURSES_SP_FUNCS = 1,
         .NCURSES_VERSION = zon_version,
         .NCURSES_VERSION_STRING = zon_version,
-        .NCURSES_WIDECHAR = 0,
+        .NCURSES_WIDECHAR = @as(u1, switch (widechar) {
+            true => 1,
+            false => 0,
+        }),
         .NCURSES_WRAP_PREFIX = "_nc_",
         .PACKAGE = "ncurses",
         .PURE_TERMINFO = 1,
@@ -1159,8 +1217,12 @@ pub fn ncurses_defs_header(b: *std.Build, target: std.Build.ResolvedTarget) *std
         .USE_ROOT_ACCESS = 1,
         .USE_ROOT_ENVIRON = 1,
         .USE_SIGWINCH = 1,
+        .USE_STRING_HACKS = 1,
         .USE_TERM_DRIVER = 1,
-        .USE_WIDEC_SUPPORT = 0,
+        .USE_WIDEC_SUPPORT = @as(u1, switch (widechar) {
+            true => 1,
+            false => 0,
+        }),
         .USE_XTERM_PTY = only_posix,
         .EXP_WIN32_DRIVER = only_windows,
         .USE_WIN32CON_DRIVER = @as(?i64, switch (target.result.os.tag) {
