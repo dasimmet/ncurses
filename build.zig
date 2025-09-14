@@ -17,14 +17,19 @@ pub const ncurses_version = struct {
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const headers_step = b.step("headers", "install the zig generated headers");
+
     const no_widechar = b.option(bool, "no-widechar", "disable widechar support") orelse false;
     const widechar = !no_widechar;
+
+    const no_opaque = b.option(bool, "no-opaque", "disable opaque support") orelse false;
+    const nc_opaque: u1 = if (no_opaque) 0 else 1;
 
     const only_posix_zero: u1 = switch (target.result.os.tag) {
         .windows => 0,
         else => 1,
     };
+
+    const headers_step = b.step("headers", "install the zig generated headers");
 
     const ncurses = b.dependency("ncurses", .{});
     const modncurses = b.addModule("ncurses", .{
@@ -203,10 +208,10 @@ pub fn build(b: *std.Build) void {
         .HAVE_STDNORETURN_H = 0,
         .NCURSES_CONST = "const",
         .NCURSES_INLINE = "inline",
-        .NCURSES_OPAQUE = 0,
-        .NCURSES_OPAQUE_FORM = 0,
-        .NCURSES_OPAQUE_MENU = 0,
-        .NCURSES_OPAQUE_PANEL = 0,
+        .NCURSES_OPAQUE = nc_opaque,
+        .NCURSES_OPAQUE_FORM = nc_opaque,
+        .NCURSES_OPAQUE_MENU = nc_opaque,
+        .NCURSES_OPAQUE_PANEL = nc_opaque,
         .NCURSES_WATTR_MACROS = 0,
         .cf_cv_enable_reentrant = 0,
         .BROKEN_LINKER = 0,
@@ -232,7 +237,7 @@ pub fn build(b: *std.Build) void {
         .NCURSES_LIBUTF8 = 0,
         .NEED_WCHAR_H = @as(u1, if (widechar) 1 else 0),
         .NCURSES_WCHAR_T = @as(u1, if (widechar) 1 else 0),
-        .NCURSES_OK_WCHAR_T = "long",
+        .NCURSES_OK_WCHAR_T = "uint32_t",
         .NCURSES_WINT_T = 0,
         .NCURSES_EXT_COLORS = 1,
         .cf_cv_1UL = "1U",
@@ -617,7 +622,7 @@ pub const Tests = struct {
         },
         .{
             .name = "new_pair",
-            .files = &.{"demo_new_pair.c"},
+            .files = &.{ "demo_new_pair.c", "popup_msg.c" },
         },
         .{
             .name = "panels",
