@@ -1074,6 +1074,7 @@ pub fn ncurses_defs_header(
         .GCC_PRINTF = 1,
         .GCC_SCANF = 1,
         .GCC_UNUSED = .@"__attribute__((unused))",
+        .HAVE_ALLOC_PAIR = 1,
         .HAVE_ASSUME_DEFAULT_COLORS = 1,
         .HAVE_BIG_CORE = 1,
         .HAVE_CLOCK_GETTIME = 0,
