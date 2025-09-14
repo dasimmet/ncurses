@@ -117,8 +117,6 @@ pub fn build(b: *std.Build) void {
 
     libncurses.installHeadersDirectory(ncurses.path("include"), "", .{});
 
-    b.installArtifact(libncurses);
-
     const dll_h = b.addConfigHeader(.{
         .include_path = "ncurses_dll.h",
         .style = .{ .autoconf_at = ncurses.path("include/ncurses_dll.h.in") },
