@@ -149,7 +149,38 @@ pub fn build(b: *std.Build) void {
     modncurses.addCMacro("HAVE_CONFIG_H", "1");
     modncurses.addCMacro("NCURSES_STATIC", "");
 
-    libncurses.installHeadersDirectory(ncurses.path("include"), "", .{});
+    libncurses.installHeader(
+        ncurses.path("include/term_entry.h"),
+        "term_entry.h",
+    );
+    libncurses.installHeader(
+        ncurses.path("include/nc_alloc.h"),
+        "nc_alloc.h",
+    );
+
+    inline for (&.{
+        "cursesapp.h",
+        "cursesf.h",
+        "cursesm.h",
+        "cursesp.h",
+        "cursesw.h",
+        "cursslk.h",
+    }) |h| {
+        libncurses.installHeader(ncurses.path(b.pathJoin(&.{ "c++", h })), h);
+    }
+    switch (options.target.result.os.tag) {
+        .windows => {
+            libncurses.installHeader(
+                ncurses.path("include/win32_curses.h"),
+                "win32_curses.h",
+            );
+            libncurses.installHeader(
+                ncurses.path("include/nc_win32.h"),
+                "nc_win32.h",
+            );
+        },
+        else => {},
+    }
 
     const dll_h = b.addConfigHeader(.{
         .include_path = "ncurses_dll.h",
@@ -233,6 +264,7 @@ pub fn build(b: *std.Build) void {
         .NCURSES_OPAQUE_PANEL = options.nc_opaque(),
         .NCURSES_WATTR_MACROS = 0,
         .cf_cv_enable_reentrant = 0,
+        .cf_cv_enable_sigwinch = 0,
         .BROKEN_LINKER = 0,
         .NCURSES_INTEROP_FUNCS = 1,
         .NCURSES_SIZE_T = "short",
@@ -259,6 +291,7 @@ pub fn build(b: *std.Build) void {
         .NCURSES_OK_WCHAR_T = "uint32_t",
         .NCURSES_WINT_T = 0,
         .NCURSES_EXT_COLORS = 1,
+        .NCURSES_XNAMES = 1,
         .cf_cv_1UL = "1U",
         .GENERATED_EXT_FUNCS = "generated",
         .HAVE_VSSCANF = 1,
