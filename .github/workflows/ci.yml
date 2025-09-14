@@ -14,6 +14,7 @@ jobs:
     strategy:
         matrix:
           target:
+            - x86_64-linux-gnu
             - x86_64-linux-musl
             - x86_64-macos
             - x86_64-windows
@@ -34,17 +35,12 @@ jobs:
         run: git diff --exit-code
 
       - name: Run `zig build` ${{ matrix.target }}
-        run: zig build -Dtarget=${{ matrix.target }} --prefix zig-out/${{ matrix.target }}/ncurses install demo
+        run: zig build -Dtarget=${{ matrix.target }} --prefix zig-out/ncurses install demo
   
       - name: check git diff
         run: git diff --exit-code
-  
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ncurses-x86_64-linux-musl
-          path: zig-out/x86_64-linux-musl/*
 
       - uses: actions/upload-artifact@v4
         with:
           name: ncurses-${{ matrix.target }}
-          path: zig-out/${{ matrix.target }}/*
+          path: zig-out/*
