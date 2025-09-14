@@ -242,25 +242,26 @@ pub fn build(b: *std.Build) void {
         .NCURSES_SP_FUNCS = 1,
     });
 
-    const curses_h = runConcatLazyPath(b, switch (widechar) {
+    const curses_h_parts: []const FileOrString = switch (widechar) {
         true => &.{
-            curses_tmp_h.getOutput(),
-            runMakeKeyDefs(b, &.{
+            .file(curses_tmp_h.getOutput()),
+            .file(runMakeKeyDefs(b, &.{
                 ncurses.path("include/Caps"),
                 ncurses.path("include/Caps-ncurses"),
-            }, "key_defs_tmp.h"),
-            ncurses.path("include/curses.wide"), //add in widechar headers
-            ncurses.path("include/curses.tail"),
+            }, "key_defs_tmp.h")),
+            .file(ncurses.path("include/curses.wide")), //add in widechar headers
+            .file(ncurses.path("include/curses.tail")),
         },
         false => &.{
-            curses_tmp_h.getOutput(),
-            runMakeKeyDefs(b, &.{
+            .file(curses_tmp_h.getOutput()),
+            .file(runMakeKeyDefs(b, &.{
                 ncurses.path("include/Caps"),
                 ncurses.path("include/Caps-ncurses"),
-            }, "key_defs_tmp.h"),
-            ncurses.path("include/curses.tail"),
+            }, "key_defs_tmp.h")),
+            .file(ncurses.path("include/curses.tail")),
         },
-    }, "curses.h");
+    };
+    const curses_h = runConcatLazyPath(b, curses_h_parts, "curses.h");
     headers_step.dependOn(
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
@@ -428,6 +429,23 @@ pub fn build(b: *std.Build) void {
     b.step("fmt", "zig fmt").dependOn(&fmt.step);
 }
 
+pub const FileOrString = union(enum) {
+    filepath: std.Build.LazyPath,
+    string: []const u8,
+    pub fn file(filepath: std.Build.LazyPath) @This() {
+        return .{ .filepath = filepath };
+    }
+    pub fn str(string: []const u8) @This() {
+        return .{ .string = string };
+    }
+    pub fn addRunArg(self: @This(), run: *std.Build.Step.Run) void {
+        switch (self) {
+            .filepath => |fp| run.addPrefixedFileArg("file://", fp),
+            .string => |string| run.addArg(run.step.owner.fmt("string://{s}", .{string})),
+        }
+    }
+};
+
 /// runs awk prgram and captures stdout
 pub fn runAwkTpl(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
     const awk_dep = b.dependency("awk", .{
@@ -514,25 +532,8 @@ pub fn runMakeLibGenC(b: *std.Build, curses_h: std.Build.LazyPath, awk: std.Buil
     return out;
 }
 
-pub const FileOrString = union(enum) {
-    filepath: std.Build.LazyPath,
-    string: []const u8,
-    pub fn file(filepath: std.Build.LazyPath) @This() {
-        return .{ .filepath = filepath };
-    }
-    pub fn str(string: []const u8) @This() {
-        return .{ .string = string };
-    }
-    pub fn addArg(self: @This(), run: std.Build.Step.Run) void {
-        switch (self) {
-            .filepath => |fp| run.addPrefixedFileArg("file://", fp),
-            .string => |string| run.addArg(run.step.owner.fmt("string://{s}", .{string})),
-        }
-    }
-};
-
-/// concatenates a slice of files given in the form of a lazypath
-pub fn runConcatLazyPath(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+/// concatenates slices given in the form of a string or lazypath to a file
+pub fn runConcatLazyPath(b: *std.Build, src: []const FileOrString, basename: []const u8) std.Build.LazyPath {
     const exe = b.addExecutable(.{
         .name = "ConcatLazyPath",
         .root_module = b.createModule(.{
@@ -543,7 +544,7 @@ pub fn runConcatLazyPath(b: *std.Build, src: []const std.Build.LazyPath, basenam
     const run = b.addRunArtifact(exe);
     const out = run.addOutputFileArg(basename);
     for (src) |s| {
-        run.addFileArg(s);
+        s.addRunArg(run);
     }
     return out;
 }
@@ -568,6 +569,9 @@ pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename:
             if (value) |v| {
                 run.addArg(field.name);
                 run.addFileArg(v);
+            } else {
+                run.addArg(field.name);
+                run.addArg("");
             }
         } else {
             run.addArg(field.name);

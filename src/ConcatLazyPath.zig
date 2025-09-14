@@ -22,8 +22,12 @@ pub fn main() !void {
     const writer = &output.interface;
 
     for (inpaths) |ip| {
-        const infile = try compat.cwdReadFileAlloc(ip, gpa, std.math.maxInt(usize));
-        defer gpa.free(infile);
-        try writer.writeAll(infile);
+        if (std.mem.startsWith(u8, ip, "file://")) {
+            const infile = try compat.cwdReadFileAlloc(ip["file://".len..], gpa, std.math.maxInt(usize));
+            defer gpa.free(infile);
+            try writer.writeAll(infile);
+        } else if (std.mem.startsWith(u8, ip, "string://")) {
+            try writer.writeAll(ip["string://".len..]);
+        }
     }
 }
