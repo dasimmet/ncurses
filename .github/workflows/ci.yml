@@ -11,6 +11,13 @@ on:
 
 jobs:
   build:
+    strategy:
+        matrix:
+          target:
+            - x86_64-linux-musl
+            - x86_64-macos
+            - x86_64-windows
+
     runs-on: ubuntu-latest
 
     steps:
@@ -26,14 +33,8 @@ jobs:
       - name: check git diff
         run: git diff --exit-code
 
-      - name: Run `build` linux
-        run: zig build -Dtarget=x86_64-linux-musl --prefix zig-out/x86_64-linux-musl install demo
-
-      - name: Run `build` macos
-        run: zig build -Dtarget=x86_64-macos --prefix zig-out/x86_64-macos install demo
-
-      - name: Run `build` windows
-        run: zig build -Dtarget=x86_64-windows --prefix zig-out/x86_64-windows install demo
+      - name: Run `zig build` ${{ matrix.target }}
+        run: zig build -Dtarget=${{ matrix.target }} --prefix zig-out/${{ matrix.target }}/ncurses install demo
   
       - name: check git diff
         run: git diff --exit-code
@@ -42,3 +43,8 @@ jobs:
         with:
           name: ncurses-x86_64-linux-musl
           path: zig-out/x86_64-linux-musl/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ncurses-${{ matrix.target }}
+          path: zig-out/${{ matrix.target }}/*
