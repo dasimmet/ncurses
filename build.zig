@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
     const no_widechar = b.option(bool, "no-widechar", "disable widechar support") orelse false;
     const widechar = !no_widechar;
 
-    const only_posix_zero: i64 = switch (target.result.os.tag) {
+    const only_posix_zero: u1 = switch (target.result.os.tag) {
         .windows => 0,
         else => 1,
     };
@@ -234,7 +234,7 @@ pub fn build(b: *std.Build) void {
         .NCURSES_WCHAR_T = @as(u1, if (widechar) 1 else 0),
         .NCURSES_OK_WCHAR_T = "long",
         .NCURSES_WINT_T = 0,
-        .NCURSES_EXT_COLORS = 0,
+        .NCURSES_EXT_COLORS = 1,
         .cf_cv_1UL = "1U",
         .GENERATED_EXT_FUNCS = "generated",
         .HAVE_VSSCANF = 1,
@@ -381,8 +381,8 @@ pub fn build(b: *std.Build) void {
             .cf_cv_enable_reentrant = 0,
             .HAVE_TCGETATTR = 1,
             .NCURSES_SBOOL = "char",
-            .NCURSES_EXT_COLORS = 0,
-            .EXP_WIN32_DRIVER = @as(i64, switch (target.result.os.tag) {
+            .NCURSES_EXT_COLORS = 1,
+            .EXP_WIN32_DRIVER = @as(u1, switch (target.result.os.tag) {
                 .windows => 1,
                 else => 0,
             }),
@@ -1047,19 +1047,19 @@ pub fn ncurses_defs_header(
     target: std.Build.ResolvedTarget,
     widechar: bool,
 ) *std.Build.Step.ConfigHeader {
-    const only_posix: ?i64 = switch (target.result.os.tag) {
+    const only_posix: ?u1 = switch (target.result.os.tag) {
         .windows => null,
         else => 1,
     };
-    const only_posix_zero: ?i64 = switch (target.result.os.tag) {
+    const only_posix_zero: ?u1 = switch (target.result.os.tag) {
         .windows => 0,
         else => 1,
     };
 
-    const only_windows = @as(?i64, switch (target.result.os.tag) {
+    const only_windows: ?u1 = switch (target.result.os.tag) {
         .windows => 1,
         else => null,
-    });
+    };
 
     return b.addConfigHeader(.{
         .style = .blank,
@@ -1094,6 +1094,7 @@ pub fn ncurses_defs_header(
         .HAVE_GETOPT_H = 1,
         .HAVE_GETOPT_HEADER = 1,
         .HAVE_HAS_KEY = 1,
+        .HAVE_INIT_EXTENDED_COLOR = 1,
         .HAVE_INTTYPES_H = 1,
         .HAVE_IOSTREAM = 1,
         .HAVE_ISASCII = 1,
@@ -1184,7 +1185,7 @@ pub fn ncurses_defs_header(
         .NCURSES_EXT_FUNCS = 1,
         .NCURSES_EXT_PUTWIN = 1,
         .NCURSES_NO_PADDING = 1,
-        .NCURSES_OSPEED_COMPAT = @as(u8, switch (target.result.os.tag) {
+        .NCURSES_OSPEED_COMPAT = @as(u1, switch (target.result.os.tag) {
             .macos => 0,
             else => 1,
         }),
@@ -1229,7 +1230,7 @@ pub fn ncurses_defs_header(
         }),
         .USE_XTERM_PTY = only_posix,
         .EXP_WIN32_DRIVER = only_windows,
-        .USE_WIN32CON_DRIVER = @as(?i64, switch (target.result.os.tag) {
+        .USE_WIN32CON_DRIVER = @as(?u1, switch (target.result.os.tag) {
             .windows => 1,
             else => null,
         }),
