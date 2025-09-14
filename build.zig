@@ -30,6 +30,21 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    const linkage: std.builtin.LinkMode = blk: {
+        if (b.option(bool, "dynamic", "build a shared library")) |opt| {
+            break :blk switch (opt) {
+                true => .dynamic,
+                false => .static,
+            };
+        } else break :blk .static;
+    };
+    const libncurses = b.addLibrary(.{
+        .name = "ncurses",
+        .root_module = modncurses,
+        .linkage = linkage,
+    });
+    b.installArtifact(libncurses);
+
     inline for (Sources.all) |source| {
         modncurses.addCSourceFiles(.{
             .root = ncurses.path(source.dir),
@@ -37,6 +52,9 @@ pub fn build(b: *std.Build) void {
             .files = source.files,
         });
         modncurses.addIncludePath(ncurses.path(source.dir));
+        for (source.installheaders) |header| {
+            libncurses.installHeader(ncurses.path(b.pathJoin(&.{ source.dir, header })), header);
+        }
     }
     if (target.result.os.tag == .windows) {
         modncurses.addCMacro("USE_TERM_DRIVER", "1");
@@ -99,28 +117,7 @@ pub fn build(b: *std.Build) void {
     // modncurses.addCMacro("TRACE", "");
     modncurses.addCMacro("NCURSES_STATIC", "");
 
-    const linkage: std.builtin.LinkMode = blk: {
-        if (b.option(bool, "dynamic", "build a shared library")) |opt| {
-            break :blk switch (opt) {
-                true => .dynamic,
-                false => .static,
-            };
-        } else break :blk .static;
-    };
-    const libncurses = b.addLibrary(.{
-        .name = "ncurses",
-        .root_module = modncurses,
-        .linkage = linkage,
-    });
-    libncurses.installLibraryHeaders(libncurses);
-    inline for (&.{
-        "include",
-        "menu",
-        "panel",
-        "form",
-    }) |dir| {
-        libncurses.installHeadersDirectory(ncurses.path(dir), "", .{});
-    }
+    libncurses.installHeadersDirectory(ncurses.path("include"), "", .{});
 
     b.installArtifact(libncurses);
 
@@ -649,12 +646,12 @@ pub const Tests = struct {
 pub const Sources = struct {
     dir: []const u8,
     files: []const []const u8,
+    installheaders: []const []const u8 = &.{},
     pub const all: []const Sources = &.{
         ncurses,
         base,
         menu,
         panel,
-        progs,
         form,
         trace,
         tinfo,
@@ -771,6 +768,7 @@ pub const Sources = struct {
 
     pub const menu: Sources = .{
         .dir = "menu",
+        .installheaders = &.{ "eti.h", "menu.h" },
         .files = &.{
             "m_attribs.c",
             "m_cursor.c",
@@ -804,6 +802,7 @@ pub const Sources = struct {
 
     pub const panel: Sources = .{
         .dir = "panel",
+        .installheaders = &.{"panel.h"},
         .files = &.{
             "p_above.c",
             "panel.c",
@@ -823,27 +822,9 @@ pub const Sources = struct {
         },
     };
 
-    pub const progs: Sources = .{
-        .dir = "progs",
-        .files = &.{
-            // "clear.c",
-            // "clear_cmd.c",
-            // "dump_entry.c",
-            // "infocmp.c",
-            // "reset_cmd.c",
-            // "tabs.c",
-            // "tic.c",
-            // "toe.c",
-            // "tparm_type.c",
-            // "tput.c",
-            // "transform.c",
-            // "tset.c",
-            // "tty_settings.c",
-        },
-    };
-
     pub const form: Sources = .{
         .dir = "form",
+        .installheaders = &.{"form.h"},
         .files = &.{
             "fld_arg.c",
             "fld_attr.c",
