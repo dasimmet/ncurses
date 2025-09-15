@@ -45,6 +45,13 @@ pub const Options = struct {
             else => null,
         };
     }
+
+    pub fn only_windows(self: @This()) u1 {
+        return switch (self.target.result.os.tag) {
+            .windows => 1,
+            else => 0,
+        };
+    }
 };
 
 pub fn build(b: *std.Build) void {
@@ -1266,7 +1273,7 @@ pub fn ncurses_defs_header(
         .USE_ROOT_ENVIRON = 1,
         .USE_SIGWINCH = 1,
         .USE_STRING_HACKS = 1,
-        .USE_TERM_DRIVER = 1,
+        .USE_TERM_DRIVER = options.only_windows(),
         .USE_WIDEC_SUPPORT = @as(u1, switch (options.widechar) {
             true => 1,
             false => 0,
