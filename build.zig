@@ -1252,7 +1252,7 @@ pub fn ncurses_defs_header(
         .STDC_HEADERS = 1,
         .SYSTEM_NAME = "linux-gnu",
         .TERMINFO = "/usr/share/terminfo",
-        .TERMINFO_DIRS = "/usr/share/terminfo",
+        .TERMINFO_DIRS = "/usr/share/terminfo:/lib/terminfo:/usr/local/share/terminfo",
         .TIME_WITH_SYS_TIME = 1,
         .USE_ASSUMED_COLOR = 1,
         .USE_FOPEN_BIN_R = 1,
