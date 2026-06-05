@@ -203,7 +203,7 @@ pub fn build(b: *Build) void {
 
     const ncurses_zig_defs = ncurses_defs_header(b, options);
 
-    const ncurses_cfg_h = runConfigHeaderLazyPath(
+    const ncurses_cfg_h = runTemplateFileContens(
         b,
         ncurses.path("include/ncurses_cfg.hin"),
         "ncurses_cfg.h",
@@ -327,7 +327,7 @@ pub fn build(b: *Build) void {
             ncurses.path("include/curses.tail"),
         },
     };
-    const curses_h = runConcatLazyPath(b, curses_h_parts, "curses.h");
+    const curses_h = runConcatFiles(b, curses_h_parts, "curses.h");
     headers_step.dependOn(
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
@@ -522,9 +522,9 @@ pub fn runAwkTpl(b: *Build, prog: LazyPath, defs: []const LazyPath, basename: []
 /// generates ncurses_def.h from ncurses_defs text file
 pub fn runMakeNCursesDef(b: *Build, src: LazyPath, basename: []const u8) LazyPath {
     const exe = b.addExecutable(.{
-        .name = "MakeNCursesDef",
+        .name = "MKncurses_def.sh",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/MakeNCursesDef.zig"),
+            .root_source_file = b.path("src/make_ncurses_def.zig"),
             .target = b.graph.host,
         }),
     });
@@ -536,9 +536,9 @@ pub fn runMakeNCursesDef(b: *Build, src: LazyPath, basename: []const u8) LazyPat
 /// generates key def headers from ncurses Caps files
 pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
     const exe = b.addExecutable(.{
-        .name = "MakeKeyDefs",
+        .name = "MKkeydefs.sh",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/MakeKeyDefs.zig"),
+            .root_source_file = b.path("src/make_key_defs.zig"),
             .target = b.graph.host,
         }),
     });
@@ -554,9 +554,9 @@ pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) La
 /// replaces "./ncurses/tinfo/MKfallback.sh $(TERMINFO) $(TERMINFO_SRC) "$(TIC_PATH)" "$(INFOCMP_PATH)" $(FALLBACK_LIST)"
 pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
     const exe = b.addExecutable(.{
-        .name = "MakeFallbackC",
+        .name = "MKfallback.sh",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/MakeFallbackC.zig"),
+            .root_source_file = b.path("src/make_fallback_c.zig"),
             .target = b.graph.host,
         }),
     });
@@ -574,9 +574,9 @@ pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
 /// ./base/MKlib_gen.sh "$CC" "mawk" generated <../include/curses.h
 pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
     const exe = b.addExecutable(.{
-        .name = "MakeFallbackC",
+        .name = "MKlib_gen.sh",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/MakeLibGenC.zig"),
+            .root_source_file = b.path("src/make_lib_gen_c.zig"),
             .target = b.graph.host,
         }),
     });
@@ -588,11 +588,11 @@ pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
 }
 
 /// concatenates slices given in the form of a string or lazypath to a file
-pub fn runConcatLazyPath(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
+pub fn runConcatFiles(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
     const exe = b.addExecutable(.{
-        .name = "ConcatLazyPath",
+        .name = "ConcatFiles",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ConcatLazyPath.zig"),
+            .root_source_file = b.path("src/concat_files.zig"),
             .target = b.graph.host,
         }),
     });
@@ -606,11 +606,11 @@ pub fn runConcatLazyPath(b: *Build, src: []const LazyPath, basename: []const u8)
 
 /// Replaces keys in a file like configheader, but accepts lazypaths to files as arguments
 /// Keys for replacement have no particular syntax.
-pub fn runConfigHeaderLazyPath(b: *Build, src: LazyPath, basename: []const u8, args: anytype) LazyPath {
+pub fn runTemplateFileContens(b: *Build, src: LazyPath, basename: []const u8, args: anytype) LazyPath {
     const exe = b.addExecutable(.{
-        .name = "ConfigHeaderLazyPath",
+        .name = "template_file_contents",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ConfigHeaderLazyPath.zig"),
+            .root_source_file = b.path("src/template_file_contents.zig"),
             .target = b.graph.host,
         }),
     });

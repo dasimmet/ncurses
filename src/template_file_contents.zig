@@ -1,5 +1,13 @@
 const std = @import("std");
 
+// usage:
+// template_file_contents <template_filepath> <output_filepath> [<key_name> <value_filepath>]
+//
+// reads a <template_filename> and a list of pairs of
+// <key_name> and <value_filepath>,
+// then replaces every occurrence of <key_name> in the template
+// with the contents of <value_filepath>
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
