@@ -1,4 +1,6 @@
 const std = @import("std");
+const Build = std.Build;
+const LazyPath = Build.LazyPath;
 const ConfigHeaderNoComment = @import("src/ConfigHeaderNoComment.zig");
 const zon_version: []const u8 = @import("build.zig.zon").version;
 const zon_parsed_version = std.SemanticVersion.parse(zon_version) catch unreachable;
@@ -9,13 +11,13 @@ pub const ncurses_version = struct {
     pub const patch = @as(i64, zon_parsed_version.patch);
     pub const mouse = 2;
 
-    pub fn patch_str(b: *std.Build) []const u8 {
+    pub fn patch_str(b: *Build) []const u8 {
         return b.fmt("{}", .{patch});
     }
 };
 
 pub const Options = struct {
-    target: std.Build.ResolvedTarget,
+    target: Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     widechar: bool,
     @"opaque": bool,
@@ -54,7 +56,7 @@ pub const Options = struct {
     }
 };
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *Build) void {
     const options: Options = .{
         .target = b.standardTargetOptions(.{}),
         .optimize = b.standardOptimizeOption(.{}),
@@ -227,7 +229,7 @@ pub fn build(b: *std.Build) void {
     libncurses.installConfigHeader(unctrl_h);
 
     headers_step.dependOn(
-        &b.addInstallHeaderFile(unctrl_h.getOutput(), "unctrl.h").step,
+        &b.addInstallHeaderFile(unctrl_h.getOutputFile(), "unctrl.h").step,
     );
 
     {
@@ -243,7 +245,7 @@ pub fn build(b: *std.Build) void {
         libncurses.installConfigHeader(termcap_h);
 
         headers_step.dependOn(
-            &b.addInstallHeaderFile(termcap_h.getOutput(), "termcap.h").step,
+            &b.addInstallHeaderFile(termcap_h.getOutputFile(), "termcap.h").step,
         );
     }
 
@@ -306,23 +308,23 @@ pub fn build(b: *std.Build) void {
         .NCURSES_SP_FUNCS = 1,
     });
 
-    const curses_h_parts: []const FileOrString = switch (options.widechar) {
+    const curses_h_parts: []const LazyPath = switch (options.widechar) {
         true => &.{
-            .file(curses_tmp_h.getOutput()),
-            .file(runMakeKeyDefs(b, &.{
+            curses_tmp_h.getOutputFile(),
+            runMakeKeyDefs(b, &.{
                 ncurses.path("include/Caps"),
                 ncurses.path("include/Caps-ncurses"),
-            }, "key_defs_tmp.h")),
-            .file(ncurses.path("include/curses.wide")), //add in widechar headers
-            .file(ncurses.path("include/curses.tail")),
+            }, "key_defs_tmp.h"),
+            ncurses.path("include/curses.wide"), //add in widechar headers
+            ncurses.path("include/curses.tail"),
         },
         false => &.{
-            .file(curses_tmp_h.getOutput()),
-            .file(runMakeKeyDefs(b, &.{
+            curses_tmp_h.getOutputFile(),
+            runMakeKeyDefs(b, &.{
                 ncurses.path("include/Caps"),
                 ncurses.path("include/Caps-ncurses"),
-            }, "key_defs_tmp.h")),
-            .file(ncurses.path("include/curses.tail")),
+            }, "key_defs_tmp.h"),
+            ncurses.path("include/curses.tail"),
         },
     };
     const curses_h = runConcatLazyPath(b, curses_h_parts, "curses.h");
@@ -362,13 +364,10 @@ pub fn build(b: *std.Build) void {
         .flags = Sources.flags(options.target),
     });
 
-    const makekeys = b.addExecutable(.{
-        .name = "makekeys",
-        .root_module = b.createModule(.{
-            .target = b.graph.host,
-            .optimize = .ReleaseSmall,
-            .link_libc = true,
-        }),
+    const makekeys = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .ReleaseSmall,
+        .link_libc = true,
     });
     makekeys.addIncludePath(unctrl_h.getOutputDir());
     makekeys.addIncludePath(curses_h.dirname());
@@ -381,10 +380,16 @@ pub fn build(b: *std.Build) void {
         .file = ncurses.path("ncurses/tinfo/make_keys.c"),
         .flags = Sources.flags(options.target),
     });
-    const run_mkkeys = b.addRunArtifact(makekeys);
+
+    const makekeys_exe = b.addExecutable(.{
+        .name = "makekeys",
+        .root_module = makekeys,
+    });
+
+    const run_mkkeys = b.addRunArtifact(makekeys_exe);
     run_mkkeys.addFileArg(b.path("src/c/keys.list"));
     const keytry_wf = b.addWriteFiles();
-    const keytry_h = keytry_wf.addCopyFile(run_mkkeys.captureStdOut(), "init_keytry.h");
+    const keytry_h = keytry_wf.addCopyFile(run_mkkeys.captureStdOut(.{}), "init_keytry.h");
     modncurses.addIncludePath(keytry_h.dirname());
 
     modncurses.addIncludePath(ncurses.path("include"));
@@ -401,15 +406,12 @@ pub fn build(b: *std.Build) void {
                     else => {},
                 }
             }
-            const demo = b.addExecutable(.{
-                .name = testf.name,
-                .root_module = b.createModule(.{
-                    .target = options.target,
-                    .optimize = options.optimize,
-                }),
+            const demo = b.createModule(.{
+                .target = options.target,
+                .optimize = options.optimize,
             });
             switch (options.linkage) {
-                .static => demo.root_module.addCMacro("NCURSES_STATIC", ""),
+                .static => demo.addCMacro("NCURSES_STATIC", ""),
                 .dynamic => {},
             }
 
@@ -420,12 +422,17 @@ pub fn build(b: *std.Build) void {
             });
             demo.linkLibrary(libncurses);
             demo.addIncludePath(ncurses.path(testf.dir));
-            demo_step.dependOn(&b.addInstallArtifact(demo, .{}).step);
+
+            const demo_exe = b.addExecutable(.{
+                .name = testf.name,
+                .root_module = demo,
+            });
+            demo_step.dependOn(&b.addInstallArtifact(demo_exe, .{}).step);
             const demo_s = b.step(
-                b.fmt("demo_{s}", .{testf.name}),
+                b.fmt("demo-{s}", .{testf.name}),
                 b.fmt("run demo {s}", .{testf.name}),
             );
-            demo_s.dependOn(&b.addRunArtifact(demo).step);
+            demo_s.dependOn(&b.addRunArtifact(demo_exe).step);
         }
     }
 
@@ -435,6 +442,7 @@ pub fn build(b: *std.Build) void {
                 .autoconf_at = ncurses.path("include/MKterm.h.awk.in"),
             },
             .include_path = "MKterm.h.awk",
+            .add_comment = false,
         }, .{
             .NCURSES_MAJOR = ncurses_version.major,
             .NCURSES_MINOR = ncurses_version.minor,
@@ -459,7 +467,7 @@ pub fn build(b: *std.Build) void {
         });
         const term_h = runAwkTpl(
             b,
-            mkterm_h.getOutput(),
+            mkterm_h.getOutputFile(),
             &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
             "term.h",
         );
@@ -493,25 +501,8 @@ pub fn build(b: *std.Build) void {
     b.step("fmt", "zig fmt").dependOn(&fmt.step);
 }
 
-pub const FileOrString = union(enum) {
-    filepath: std.Build.LazyPath,
-    string: []const u8,
-    pub fn file(filepath: std.Build.LazyPath) @This() {
-        return .{ .filepath = filepath };
-    }
-    pub fn str(string: []const u8) @This() {
-        return .{ .string = string };
-    }
-    pub fn addRunArg(self: @This(), run: *std.Build.Step.Run) void {
-        switch (self) {
-            .filepath => |fp| run.addPrefixedFileArg("file://", fp),
-            .string => |string| run.addArg(run.step.owner.fmt("string://{s}", .{string})),
-        }
-    }
-};
-
 /// runs awk prgram and captures stdout
-pub fn runAwkTpl(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+pub fn runAwkTpl(b: *Build, prog: LazyPath, defs: []const LazyPath, basename: []const u8) LazyPath {
     const awk_dep = b.dependency("awk", .{
         .target = b.graph.host,
         .optimize = .ReleaseSmall,
@@ -525,11 +516,11 @@ pub fn runAwkTpl(b: *std.Build, prog: std.Build.LazyPath, defs: []const std.Buil
     }
     if (defs.len == 0) awk.setStdIn(.{ .bytes = "" });
     const wf = b.addWriteFiles();
-    return wf.addCopyFile(awk.captureStdOut(), basename);
+    return wf.addCopyFile(awk.captureStdOut(.{}), basename);
 }
 
 /// generates ncurses_def.h from ncurses_defs text file
-pub fn runMakeNCursesDef(b: *std.Build, src: std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+pub fn runMakeNCursesDef(b: *Build, src: LazyPath, basename: []const u8) LazyPath {
     const exe = b.addExecutable(.{
         .name = "MakeNCursesDef",
         .root_module = b.createModule(.{
@@ -543,7 +534,7 @@ pub fn runMakeNCursesDef(b: *std.Build, src: std.Build.LazyPath, basename: []con
 }
 
 /// generates key def headers from ncurses Caps files
-pub fn runMakeKeyDefs(b: *std.Build, src: []const std.Build.LazyPath, basename: []const u8) std.Build.LazyPath {
+pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
     const exe = b.addExecutable(.{
         .name = "MakeKeyDefs",
         .root_module = b.createModule(.{
@@ -561,7 +552,7 @@ pub fn runMakeKeyDefs(b: *std.Build, src: []const std.Build.LazyPath, basename: 
 
 /// generates fallback.c
 /// replaces "./ncurses/tinfo/MKfallback.sh $(TERMINFO) $(TERMINFO_SRC) "$(TIC_PATH)" "$(INFOCMP_PATH)" $(FALLBACK_LIST)"
-pub fn runMakeFallbackC(b: *std.Build, src: []const std.Build.LazyPath) std.Build.LazyPath {
+pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
     const exe = b.addExecutable(.{
         .name = "MakeFallbackC",
         .root_module = b.createModule(.{
@@ -581,7 +572,7 @@ pub fn runMakeFallbackC(b: *std.Build, src: []const std.Build.LazyPath) std.Buil
 /// replaces:
 /// CC="zig 0.15.1 cc -E -DHAVE_CONFIG_H -DBUILDING_NCURSES -I../ncurses -I. -I../include -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DNDEBUG"
 /// ./base/MKlib_gen.sh "$CC" "mawk" generated <../include/curses.h
-pub fn runMakeLibGenC(b: *std.Build, curses_h: std.Build.LazyPath, awk: std.Build.LazyPath) std.Build.LazyPath {
+pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
     const exe = b.addExecutable(.{
         .name = "MakeFallbackC",
         .root_module = b.createModule(.{
@@ -597,7 +588,7 @@ pub fn runMakeLibGenC(b: *std.Build, curses_h: std.Build.LazyPath, awk: std.Buil
 }
 
 /// concatenates slices given in the form of a string or lazypath to a file
-pub fn runConcatLazyPath(b: *std.Build, src: []const FileOrString, basename: []const u8) std.Build.LazyPath {
+pub fn runConcatLazyPath(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
     const exe = b.addExecutable(.{
         .name = "ConcatLazyPath",
         .root_module = b.createModule(.{
@@ -607,15 +598,15 @@ pub fn runConcatLazyPath(b: *std.Build, src: []const FileOrString, basename: []c
     });
     const run = b.addRunArtifact(exe);
     const out = run.addOutputFileArg(basename);
-    for (src) |s| {
-        s.addRunArg(run);
+    for (src) |lp| {
+        run.addPrefixedFileArg("file://", lp);
     }
     return out;
 }
 
 /// Replaces keys in a file like configheader, but accepts lazypaths to files as arguments
 /// Keys for replacement have no particular syntax.
-pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename: []const u8, args: anytype) std.Build.LazyPath {
+pub fn runConfigHeaderLazyPath(b: *Build, src: LazyPath, basename: []const u8, args: anytype) LazyPath {
     const exe = b.addExecutable(.{
         .name = "ConfigHeaderLazyPath",
         .root_module = b.createModule(.{
@@ -627,18 +618,18 @@ pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename:
     run.stdio = .inherit;
     run.addFileArg(src);
     const out = run.addOutputFileArg(basename);
-    inline for (comptime std.meta.fields(@TypeOf(args))) |field| {
-        const value = @field(args, field.name);
+    inline for (comptime std.meta.fieldNames(@TypeOf(args))) |field| {
+        const value = @field(args, field);
         if (@typeInfo(@TypeOf(value)) == .optional) {
             if (value) |v| {
-                run.addArg(field.name);
+                run.addArg(field);
                 run.addFileArg(v);
             } else {
-                run.addArg(field.name);
+                run.addArg(field);
                 run.addArg("");
             }
         } else {
-            run.addArg(field.name);
+            run.addArg(field);
             run.addFileArg(value);
         }
     }
@@ -646,11 +637,11 @@ pub fn runConfigHeaderLazyPath(b: *std.Build, src: std.Build.LazyPath, basename:
 }
 
 /// a copy of std.Build.Step.ConfigHeader
-/// except not writing the comment about it
-/// being generated. ncurses templates a `.awk` that does not
-/// support c-style comments.
+/// with the added option of "add_comment" to disable writing the comment at
+/// the top of the output file. ncurses needs to template an `.awk` file that
+/// does not support c-style comments.
 pub fn addConfigHeaderNoComment(
-    b: *std.Build,
+    b: *Build,
     options: ConfigHeaderNoComment.Options,
     values: anytype,
 ) *ConfigHeaderNoComment {
@@ -768,7 +759,7 @@ pub const Sources = struct {
         tinfo,
         tty,
     };
-    pub fn flags(target: std.Build.ResolvedTarget) []const []const u8 {
+    pub fn flags(target: Build.ResolvedTarget) []const []const u8 {
         return switch (target.result.os.tag) {
             .windows => &(Flags.common ++ .{
                 "-Wno-error=unused-parameter",
@@ -1107,9 +1098,9 @@ pub const Sources = struct {
 };
 
 pub fn ncurses_defs_header(
-    b: *std.Build,
+    b: *Build,
     options: Options,
-) *std.Build.Step.ConfigHeader {
+) *Build.Step.ConfigHeader {
     return b.addConfigHeader(.{
         .style = .blank,
         .include_path = "ncurses_zig_defs.h",

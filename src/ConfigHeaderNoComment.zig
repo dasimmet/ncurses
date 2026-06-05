@@ -1,9 +1,10 @@
-const std = @import("std");
 const ConfigHeader = @This();
+
+const std = @import("std");
+const Io = std.Io;
 const Step = std.Build.Step;
 const Allocator = std.mem.Allocator;
 const Writer = std.Io.Writer;
-const compat = @import("compat.zig");
 
 pub const Style = union(enum) {
     /// A configure format supported by autotools that uses `#undef foo` to
@@ -37,7 +38,7 @@ pub const Value = union(enum) {
 };
 
 step: Step,
-values: std.StringArrayHashMap(Value),
+values: std.array_hash_map.String(Value),
 /// This directory contains the generated file under the name `include_path`.
 generated_dir: std.Build.GeneratedFile,
 
@@ -45,6 +46,7 @@ style: Style,
 max_bytes: usize,
 include_path: []const u8,
 include_guard_override: ?[]const u8,
+add_comment: bool = true,
 
 pub const base_id: Step.Id = .config_header;
 
@@ -54,6 +56,7 @@ pub const Options = struct {
     include_path: ?[]const u8 = null,
     first_ret_addr: ?usize = null,
     include_guard_override: ?[]const u8 = null,
+    add_comment: bool = true,
 };
 
 pub fn create(owner: *std.Build, options: Options) *ConfigHeader {
@@ -94,18 +97,24 @@ pub fn create(owner: *std.Build, options: Options) *ConfigHeader {
             .first_ret_addr = options.first_ret_addr orelse @returnAddress(),
         }),
         .style = options.style,
-        .values = .init(owner.allocator),
+        .values = .empty,
 
         .max_bytes = options.max_bytes,
         .include_path = include_path,
         .include_guard_override = options.include_guard_override,
         .generated_dir = .{ .step = &config_header.step },
+        .add_comment = options.add_comment,
     };
 
     if (options.style.getPath()) |s| {
         s.addStepDependencies(&config_header.step);
     }
     return config_header;
+}
+
+pub fn addIdent(config_header: *ConfigHeader, name: []const u8, value: []const u8) void {
+    const arena = config_header.step.owner.allocator;
+    config_header.values.put(arena, name, .{ .ident = value }) catch @panic("OOM");
 }
 
 pub fn addValue(config_header: *ConfigHeader, name: []const u8, comptime T: type, value: T) void {
@@ -125,47 +134,45 @@ pub fn getOutputFile(ch: *ConfigHeader) std.Build.LazyPath {
     return ch.getOutputDir().path(ch.step.owner, ch.include_path);
 }
 
-/// Deprecated; use `getOutputFile`.
-pub const getOutput = getOutputFile;
-
 fn addValueInner(config_header: *ConfigHeader, name: []const u8, comptime T: type, value: T) !void {
+    const arena = config_header.step.owner.allocator;
     switch (@typeInfo(T)) {
         .null => {
-            try config_header.values.put(name, .undef);
+            try config_header.values.put(arena, name, .undef);
         },
         .void => {
-            try config_header.values.put(name, .defined);
+            try config_header.values.put(arena, name, .defined);
         },
         .bool => {
-            try config_header.values.put(name, .{ .boolean = value });
+            try config_header.values.put(arena, name, .{ .boolean = value });
         },
         .int => {
-            try config_header.values.put(name, .{ .int = value });
+            try config_header.values.put(arena, name, .{ .int = value });
         },
         .comptime_int => {
-            try config_header.values.put(name, .{ .int = value });
+            try config_header.values.put(arena, name, .{ .int = value });
         },
         .@"enum", .enum_literal => {
-            try config_header.values.put(name, .{ .ident = @tagName(value) });
+            try config_header.values.put(arena, name, .{ .ident = @tagName(value) });
         },
         .optional => {
             if (value) |x| {
                 return addValueInner(config_header, name, @TypeOf(x), x);
             } else {
-                try config_header.values.put(name, .undef);
+                try config_header.values.put(arena, name, .undef);
             }
         },
         .pointer => |ptr| {
             switch (@typeInfo(ptr.child)) {
                 .array => |array| {
                     if (ptr.size == .one and array.child == u8) {
-                        try config_header.values.put(name, .{ .string = value });
+                        try config_header.values.put(arena, name, .{ .string = value });
                         return;
                     }
                 },
                 .int => {
                     if (ptr.size == .slice and ptr.child == u8) {
-                        try config_header.values.put(name, .{ .string = value });
+                        try config_header.values.put(arena, name, .{ .string = value });
                         return;
                     }
                 },
@@ -186,6 +193,7 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
 
     const gpa = b.allocator;
     const arena = b.allocator;
+    const io = b.graph.io;
 
     var man = b.graph.cache.obtain();
     defer man.deinit();
@@ -201,29 +209,29 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
     defer aw.deinit();
     const bw = &aw.writer;
 
-    // const header_text = "This file was generated by ConfigHeader using the Zig Build System.";
-    // const c_generated_line = "/* " ++ header_text ++ " */\n";
-    // const asm_generated_line = "; " ++ header_text ++ "\n";
+    const header_text = "This file was generated by ConfigHeader using the Zig Build System.";
+    const c_generated_line = "/* " ++ header_text ++ " */\n";
+    const asm_generated_line = "; " ++ header_text ++ "\n";
 
     switch (config_header.style) {
         .autoconf_undef, .autoconf_at => |file_source| {
-            // try bw.writeAll(c_generated_line);
+            if (config_header.add_comment) try bw.writeAll(c_generated_line);
             const src_path = file_source.getPath2(b, step);
-            const contents = compat.cwdReadFileAlloc(src_path, arena, config_header.max_bytes) catch |err| {
+            const contents = Io.Dir.cwd().readFileAlloc(io, src_path, arena, .limited(config_header.max_bytes)) catch |err| {
                 return step.fail("unable to read autoconf input file '{s}': {s}", .{
                     src_path, @errorName(err),
                 });
             };
             switch (config_header.style) {
-                .autoconf_undef => try render_autoconf_undef(step, contents, bw, config_header.values, src_path),
-                .autoconf_at => try render_autoconf_at(step, contents, &aw, config_header.values, src_path),
+                .autoconf_undef => try render_autoconf_undef(step, contents, bw, &config_header.values, src_path),
+                .autoconf_at => try render_autoconf_at(step, contents, &aw, &config_header.values, src_path),
                 else => unreachable,
             }
         },
         .cmake => |file_source| {
-            // try bw.writeAll(c_generated_line);
+            if (config_header.add_comment) try bw.writeAll(c_generated_line);
             const src_path = file_source.getPath2(b, step);
-            const contents = compat.cwdReadFileAlloc(src_path, arena, config_header.max_bytes) catch |err| {
+            const contents = Io.Dir.cwd().readFileAlloc(io, src_path, arena, .limited(config_header.max_bytes)) catch |err| {
                 return step.fail("unable to read cmake input file '{s}': {s}", .{
                     src_path, @errorName(err),
                 });
@@ -231,11 +239,11 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
             try render_cmake(step, contents, bw, config_header.values, src_path);
         },
         .blank => {
-            // try bw.writeAll(c_generated_line);
+            if (config_header.add_comment) try bw.writeAll(c_generated_line);
             try render_blank(gpa, bw, config_header.values, config_header.include_path, config_header.include_guard_override);
         },
         .nasm => {
-            // try bw.writeAll(asm_generated_line);
+            if (config_header.add_comment) try bw.writeAll(asm_generated_line);
             try render_nasm(bw, config_header.values);
         },
     }
@@ -259,13 +267,13 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
     const sub_path = b.pathJoin(&.{ "o", &digest, config_header.include_path });
     const sub_path_dirname = std.fs.path.dirname(sub_path).?;
 
-    b.cache_root.handle.makePath(sub_path_dirname) catch |err| {
+    b.cache_root.handle.createDirPath(io, sub_path_dirname) catch |err| {
         return step.fail("unable to make path '{f}{s}': {s}", .{
             b.cache_root, sub_path_dirname, @errorName(err),
         });
     };
 
-    b.cache_root.handle.writeFile(.{ .sub_path = sub_path, .data = output }) catch |err| {
+    b.cache_root.handle.writeFile(io, .{ .sub_path = sub_path, .data = output }) catch |err| {
         return step.fail("unable to write file '{f}{s}': {s}", .{
             b.cache_root, sub_path, @errorName(err),
         });
@@ -279,7 +287,7 @@ fn render_autoconf_undef(
     step: *Step,
     contents: []const u8,
     bw: *Writer,
-    values: std.StringArrayHashMap(Value),
+    values: *const std.array_hash_map.String(Value),
     src_path: []const u8,
 ) !void {
     const build = step.owner;
@@ -331,7 +339,7 @@ fn render_autoconf_at(
     step: *Step,
     contents: []const u8,
     aw: *Writer.Allocating,
-    values: std.StringArrayHashMap(Value),
+    values: *const std.array_hash_map.String(Value),
     src_path: []const u8,
 ) !void {
     const build = step.owner;
@@ -370,7 +378,7 @@ fn render_autoconf_at(
         if (!last_line) try bw.writeByte('\n');
     }
 
-    for (values.unmanaged.entries.slice().items(.key), used) |name, u| {
+    for (values.entries.slice().items(.key), used) |name, u| {
         if (!u) {
             try step.addError("{s}: error: config header value unused: '{s}'", .{ src_path, name });
             any_errors = true;
@@ -384,14 +392,14 @@ fn render_cmake(
     step: *Step,
     contents: []const u8,
     bw: *Writer,
-    values: std.StringArrayHashMap(Value),
+    values: std.array_hash_map.String(Value),
     src_path: []const u8,
 ) !void {
     const build = step.owner;
     const allocator = build.allocator;
 
-    var values_copy = try values.clone();
-    defer values_copy.deinit();
+    var values_copy = try values.clone(allocator);
+    defer values_copy.deinit(allocator);
 
     var any_errors = false;
     var line_index: u32 = 0;
@@ -417,12 +425,21 @@ fn render_cmake(
         };
         defer allocator.free(line);
 
-        if (!std.mem.startsWith(u8, line, "#")) {
+        const line_start = std.mem.findNone(u8, line, " \t\r") orelse {
+            try bw.writeAll(line);
+            if (!last_line) try bw.writeByte('\n');
+            continue;
+        };
+        const whitespace_prefix = line[0..line_start];
+        const trimmed_line = line[line_start..];
+
+        if (!std.mem.startsWith(u8, trimmed_line, "#")) {
             try bw.writeAll(line);
             if (!last_line) try bw.writeByte('\n');
             continue;
         }
-        var it = std.mem.tokenizeAny(u8, line[1..], " \t\r");
+
+        var it = std.mem.tokenizeAny(u8, trimmed_line[1..], " \t\r");
         const cmakedefine = it.next().?;
         if (!std.mem.eql(u8, cmakedefine, "cmakedefine") and
             !std.mem.eql(u8, cmakedefine, "cmakedefine01"))
@@ -499,6 +516,7 @@ fn render_cmake(
             value = Value{ .ident = it.rest() };
         }
 
+        try bw.writeAll(whitespace_prefix);
         try renderValueC(bw, name, value);
     }
 
@@ -510,7 +528,7 @@ fn render_cmake(
 fn render_blank(
     gpa: std.mem.Allocator,
     bw: *Writer,
-    defines: std.StringArrayHashMap(Value),
+    defines: std.array_hash_map.String(Value),
     include_path: []const u8,
     include_guard_override: ?[]const u8,
 ) !void {
@@ -542,7 +560,7 @@ fn render_blank(
     , .{include_guard_name});
 }
 
-fn render_nasm(bw: *Writer, defines: std.StringArrayHashMap(Value)) !void {
+fn render_nasm(bw: *Writer, defines: std.array_hash_map.String(Value)) !void {
     for (defines.keys(), defines.values()) |name, value| try renderValueNasm(bw, name, value);
 }
 
@@ -573,7 +591,7 @@ fn renderValueNasm(bw: *Writer, name: []const u8, value: Value) !void {
 fn expand_variables_autoconf_at(
     bw: *Writer,
     contents: []const u8,
-    values: std.StringArrayHashMap(Value),
+    values: *const std.array_hash_map.String(Value),
     used: []bool,
 ) !void {
     const valid_varname_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
@@ -582,12 +600,12 @@ fn expand_variables_autoconf_at(
     var source_offset: usize = 0;
     while (curr < contents.len) : (curr += 1) {
         if (contents[curr] != '@') continue;
-        if (std.mem.indexOfScalarPos(u8, contents, curr + 1, '@')) |close_pos| {
+        if (std.mem.findScalarPos(u8, contents, curr + 1, '@')) |close_pos| {
             if (close_pos == curr + 1) {
                 // closed immediately, preserve as a literal
                 continue;
             }
-            const valid_varname_end = std.mem.indexOfNonePos(u8, contents, curr + 1, valid_varname_chars) orelse 0;
+            const valid_varname_end = std.mem.findNonePos(u8, contents, curr + 1, valid_varname_chars) orelse 0;
             if (valid_varname_end != close_pos) {
                 // contains invalid characters, preserve as a literal
                 continue;
@@ -599,7 +617,7 @@ fn expand_variables_autoconf_at(
                 try bw.writeAll(key);
                 return error.MissingValue;
             };
-            const value = values.unmanaged.entries.slice().items(.value)[index];
+            const value = values.entries.slice().items(.value)[index];
             used[index] = true;
             try bw.writeAll(contents[source_offset..curr]);
             switch (value) {
@@ -620,7 +638,7 @@ fn expand_variables_autoconf_at(
 fn expand_variables_cmake(
     allocator: Allocator,
     contents: []const u8,
-    values: std.StringArrayHashMap(Value),
+    values: std.array_hash_map.String(Value),
 ) ![]const u8 {
     var result: std.array_list.Managed(u8) = .init(allocator);
     errdefer result.deinit();
@@ -639,12 +657,12 @@ fn expand_variables_cmake(
     loop: while (curr < contents.len) : (curr += 1) {
         switch (contents[curr]) {
             '@' => blk: {
-                if (std.mem.indexOfScalarPos(u8, contents, curr + 1, '@')) |close_pos| {
+                if (std.mem.findScalarPos(u8, contents, curr + 1, '@')) |close_pos| {
                     if (close_pos == curr + 1) {
                         // closed immediately, preserve as a literal
                         break :blk;
                     }
-                    const valid_varname_end = std.mem.indexOfNonePos(u8, contents, curr + 1, valid_varname_chars) orelse 0;
+                    const valid_varname_end = std.mem.findNonePos(u8, contents, curr + 1, valid_varname_chars) orelse 0;
                     if (valid_varname_end != close_pos) {
                         // contains invalid characters, preserve as a literal
                         break :blk;
@@ -735,7 +753,7 @@ fn expand_variables_cmake(
             else => {},
         }
 
-        if (var_stack.items.len > 0 and std.mem.indexOfScalar(u8, valid_varname_chars, contents[curr]) == null) {
+        if (var_stack.items.len > 0 and std.mem.findScalar(u8, valid_varname_chars, contents[curr]) == null) {
             return error.InvalidCharacter;
         }
     }
@@ -752,7 +770,7 @@ fn testReplaceVariablesAutoconfAt(
     allocator: Allocator,
     contents: []const u8,
     expected: []const u8,
-    values: std.StringArrayHashMap(Value),
+    values: std.array_hash_map.String(Value),
 ) !void {
     var aw: Writer.Allocating = .init(allocator);
     defer aw.deinit();
@@ -771,7 +789,7 @@ fn testReplaceVariablesCMake(
     allocator: Allocator,
     contents: []const u8,
     expected: []const u8,
-    values: std.StringArrayHashMap(Value),
+    values: std.array_hash_map.String(Value),
 ) !void {
     const actual = try expand_variables_cmake(allocator, contents, values);
     defer allocator.free(actual);
@@ -781,7 +799,7 @@ fn testReplaceVariablesCMake(
 
 test "expand_variables_autoconf_at simple cases" {
     const allocator = std.testing.allocator;
-    var values: std.StringArrayHashMap(Value) = .init(allocator);
+    var values: std.array_hash_map.String(Value) = .init(allocator);
     defer values.deinit();
 
     // empty strings are preserved
@@ -877,7 +895,7 @@ test "expand_variables_autoconf_at simple cases" {
 
 test "expand_variables_autoconf_at edge cases" {
     const allocator = std.testing.allocator;
-    var values: std.StringArrayHashMap(Value) = .init(allocator);
+    var values: std.array_hash_map.String(Value) = .init(allocator);
     defer values.deinit();
 
     // @-vars resolved only when they wrap valid characters, otherwise considered literals
@@ -893,7 +911,7 @@ test "expand_variables_autoconf_at edge cases" {
 
 test "expand_variables_cmake simple cases" {
     const allocator = std.testing.allocator;
-    var values: std.StringArrayHashMap(Value) = .init(allocator);
+    var values: std.array_hash_map.String(Value) = .init(allocator);
     defer values.deinit();
 
     try values.putNoClobber("undef", .undef);
@@ -981,7 +999,7 @@ test "expand_variables_cmake simple cases" {
 
 test "expand_variables_cmake edge cases" {
     const allocator = std.testing.allocator;
-    var values: std.StringArrayHashMap(Value) = .init(allocator);
+    var values: std.array_hash_map.String(Value) = .init(allocator);
     defer values.deinit();
 
     // special symbols
@@ -1042,7 +1060,7 @@ test "expand_variables_cmake edge cases" {
 
 test "expand_variables_cmake escaped characters" {
     const allocator = std.testing.allocator;
-    var values: std.StringArrayHashMap(Value) = .init(allocator);
+    var values: std.array_hash_map.String(Value) = .init(allocator);
     defer values.deinit();
 
     try values.putNoClobber("string", Value{ .string = "text" });

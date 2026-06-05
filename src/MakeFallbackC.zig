@@ -1,28 +1,20 @@
 const std = @import("std");
-const compat = @import("compat.zig");
 
-pub fn main() !void {
-    var gpa_impl = std.heap.GeneralPurposeAllocator(.{}).init;
-    defer _ = gpa_impl.deinit();
-    const gpa = gpa_impl.allocator();
-
-    var arena_impl = std.heap.ArenaAllocator.init(gpa);
-    defer arena_impl.deinit();
-    const arena = arena_impl.allocator();
-    _ = arena;
-
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+pub fn main(init: std.process.Init) !void {
+    // const gpa = init.gpa;
+    const io = init.io;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    const cwd = std.Io.Dir.cwd();
 
     std.debug.assert(args.len >= 2);
     const outpath = args[1];
     // const inpaths = args[2..];
 
-    const outfile = try std.fs.cwd().createFile(outpath, .{});
-    defer outfile.close();
+    const outfile = try cwd.createFile(io, outpath, .{});
+    defer outfile.close(io);
 
     var outbuf: [4096]u8 = undefined;
-    var output = outfile.writer(&outbuf);
+    var output = outfile.writer(io, &outbuf);
     defer output.interface.flush() catch unreachable;
     const writer = &output.interface;
 

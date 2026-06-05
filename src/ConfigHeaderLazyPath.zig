@@ -1,13 +1,11 @@
 const std = @import("std");
-const compat = @import("compat.zig");
 
-pub fn main() !void {
-    var gpa_impl = std.heap.GeneralPurposeAllocator(.{}).init;
-    defer _ = gpa_impl.deinit();
-    const gpa = gpa_impl.allocator();
-
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+    const io = init.io;
+    const arena = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(arena);
+    const cwd = std.Io.Dir.cwd();
 
     std.debug.assert(args.len > 3);
     std.debug.assert(args.len % 2 == 1); // we need args in pairs after arg 3
@@ -15,14 +13,14 @@ pub fn main() !void {
     const outpath = args[2];
     const tpl_args = args[3..];
 
-    const infile = try compat.cwdReadFileAlloc(inpath, gpa, std.math.maxInt(usize));
+    const infile = try cwd.readFileAlloc(io, inpath, gpa, .unlimited);
     defer gpa.free(infile);
 
-    const outfile = try std.fs.cwd().createFile(outpath, .{});
-    defer outfile.close();
+    const outfile = try cwd.createFile(io, outpath, .{});
+    defer outfile.close(io);
 
     var outbuf: [4096]u8 = undefined;
-    var output = outfile.writer(&outbuf);
+    var output = outfile.writer(io, &outbuf);
     defer output.interface.flush() catch unreachable;
     const writer = &output.interface;
 
@@ -37,7 +35,7 @@ pub fn main() !void {
         var arg_pos: usize = 0;
         while (arg_pos < tpl_args.len) : (arg_pos += 2) {
             const value = tpl_args[arg_pos + 1];
-            const v_file = try compat.cwdReadFileAlloc(value, gpa, std.math.maxInt(usize));
+            const v_file = try cwd.readFileAlloc(io, value, gpa, .unlimited);
             try files.append(gpa, v_file);
             try files_used.append(gpa, 0);
         }

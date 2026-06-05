@@ -1,27 +1,21 @@
 const std = @import("std");
-const compat = @import("compat.zig");
 
-pub fn main() !void {
-    var gpa_impl = std.heap.GeneralPurposeAllocator(.{}).init;
-    defer _ = gpa_impl.deinit();
-    const gpa = gpa_impl.allocator();
-
-    var arena_impl = std.heap.ArenaAllocator.init(gpa);
-    defer arena_impl.deinit();
-    const arena = arena_impl.allocator();
-
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+    const io = init.io;
+    const arena = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(arena);
+    const cwd = std.Io.Dir.cwd();
 
     std.debug.assert(args.len >= 3);
     const outpath = args[1];
     const inpaths = args[2..];
 
-    const outfile = try std.fs.cwd().createFile(outpath, .{});
-    defer outfile.close();
+    const outfile = try cwd.createFile(io, outpath, .{});
+    defer outfile.close(io);
 
     var outbuf: [4096]u8 = undefined;
-    var output = outfile.writer(&outbuf);
+    var output = outfile.writer(io, &outbuf);
     defer output.interface.flush() catch unreachable;
     const writer = &output.interface;
 
@@ -44,7 +38,7 @@ pub fn main() !void {
     defer caps.deinit(gpa);
 
     for (inpaths) |inpath| {
-        const infile = try compat.cwdReadFileAlloc(inpath, arena, std.math.maxInt(usize));
+        const infile = try cwd.readFileAlloc(io, inpath, arena, .unlimited);
 
         var line_iter = std.mem.splitScalar(
             u8,

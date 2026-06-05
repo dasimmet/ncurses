@@ -1,7 +1,7 @@
 .{
     .name = .ncurses,
     .version = "6.5.20240427",
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
     .fingerprint = 0xbfb0fbf798176298,
     .dependencies = .{
         .ncurses = .{
@@ -9,8 +9,8 @@
             .hash = "N-V-__8AAMZOFwGYoq9VA4jW9LOy4Ud9bufE7x2ep88NNqFr",
         },
         .awk = .{
-            .url = "git+https://github.com/dasimmet/zig-awk.git#ba0b266aa73960fbb7ccaad99793850af9bbc4fe",
-            .hash = "awk-1.3.4-20250131-NbEIKrAeAAB565hDroVE1bUkG8R69e_RrP3H7SKR8Lzp",
+            .url = "git+https://github.com/dasimmet/zig-awk.git#dd92d12e3030ab1c64e24db22a10e4e7f4f31058",
+            .hash = "awk-1.3.4-20250131-NbEIKqAeAAAeHTurAAD7L5cd1jH6HOBuaPXRT7VAqDej",
         },
     },
     .paths = .{
