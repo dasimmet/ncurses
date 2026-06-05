@@ -17,6 +17,8 @@ the c and data files in `src` are copied from an autotools build on ubuntu amd64
 most of them use `awk` to process the capability data files,
 maybe those tools should become zig build steps.
 
+### Implement `src/make_fallback_c.zig`
+
 ### expose more options to set as user
 
 ### replace `src/ConfigHeaderNoComment.zig`
