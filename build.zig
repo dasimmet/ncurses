@@ -645,7 +645,6 @@ pub const TemplateFileContents = struct {
         } else if (V == LazyPath) {
             run_exe.addPrefixedFileArg("f:", value);
         } else if (Vinfo == .pointer and
-            Vinfo.pointer.is_const and
             (@typeInfo(Vinfo.pointer.child) == .array or Vinfo.pointer.size == .slice))
         {
             run_exe.addArg(b.fmt("b:{s}", .{value}));
