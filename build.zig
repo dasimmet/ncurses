@@ -1,7 +1,6 @@
 const std = @import("std");
 const Build = std.Build;
 const LazyPath = Build.LazyPath;
-const ConfigHeaderNoComment = @import("src/ConfigHeaderNoComment.zig");
 const zon_version: []const u8 = @import("build.zig.zon").version;
 const zon_parsed_version = std.SemanticVersion.parse(zon_version) catch unreachable;
 
@@ -60,8 +59,8 @@ pub fn build(b: *Build) void {
     const options: Options = .{
         .target = b.standardTargetOptions(.{}),
         .optimize = b.standardOptimizeOption(.{}),
-        .widechar = !(b.option(bool, "no-opaque", "disable opaque support") orelse false),
-        .@"opaque" = !(b.option(bool, "no-widechar", "disable widechar support") orelse false),
+        .@"opaque" = !(b.option(bool, "no-opaque", "disable opaque support") orelse false),
+        .widechar = !(b.option(bool, "no-widechar", "disable widechar support") orelse false),
         .linkage = b.option(std.builtin.LinkMode, "linkage", "linkmode for the library") orelse .static,
     };
 
@@ -156,7 +155,9 @@ pub fn build(b: *Build) void {
     modncurses.addCMacro("_DEFAULT_SOURCE", "");
     modncurses.addCMacro("_XOPEN_SOURCE", "600");
     modncurses.addCMacro("HAVE_CONFIG_H", "1");
-    modncurses.addCMacro("NCURSES_STATIC", "");
+    if (options.linkage == .static) {
+        modncurses.addCMacro("NCURSES_STATIC", "");
+    }
 
     libncurses.installHeader(
         ncurses.path("include/term_entry.h"),
@@ -203,7 +204,7 @@ pub fn build(b: *Build) void {
 
     const ncurses_zig_defs = ncurses_defs_header(b, options);
 
-    const ncurses_cfg_h = runTemplateFileContens(
+    const ncurses_cfg_h = TemplateFileContents.run(
         b,
         ncurses.path("include/ncurses_cfg.hin"),
         "ncurses_cfg.h",
@@ -353,11 +354,12 @@ pub fn build(b: *Build) void {
         });
     }
 
-    const fallback_c = runMakeFallbackC(b, &.{});
-    b.step("fallback", "").dependOn(&b.addInstallFile(
-        fallback_c,
-        "fallback.c",
-    ).step);
+    const fallback_c = b.path("src/c/fallback.c");
+    // const fallback_c = runMakeFallbackC(b, &.{});
+    // b.step("fallback", "").dependOn(&b.addInstallFile(
+    //     fallback_c,
+    //     "fallback.c",
+    // ).step);
 
     modncurses.addCSourceFile(.{
         .file = fallback_c,
@@ -437,37 +439,41 @@ pub fn build(b: *Build) void {
     }
 
     {
-        const mkterm_h = addConfigHeaderNoComment(b, .{
-            .style = .{
-                .autoconf_at = ncurses.path("include/MKterm.h.awk.in"),
+        const mkterm_h = TemplateFileContents.run(
+            b,
+            ncurses.path("include/MKterm.h.awk.in"),
+            "MKterm.h.awk",
+            .{
+                .@"@NCURSES_MAJOR@" = ncurses_version.major,
+                .@"@NCURSES_MINOR@" = ncurses_version.minor,
+                .@"@HAVE_TERMIO_H@" = options.only_posix(),
+                .@"@HAVE_TERMIOS_H@" = options.only_posix(),
+                .@"@NCURSES_TPARM_VARARGS@" = 1,
+                .@"@BROKEN_LINKER@" = 0,
+                .@"@cf_cv_enable_reentrant@" = 0,
+                .@"@HAVE_TCGETATTR@" = 1,
+                .@"@NCURSES_SBOOL@" = "char",
+                .@"@NCURSES_EXT_COLORS@" = 1,
+                .@"@EXP_WIN32_DRIVER@" = @as(u1, switch (options.target.result.os.tag) {
+                    .windows => 1,
+                    else => 0,
+                }),
+                .@"@NCURSES_XNAMES@" = 1,
+                .@"@NCURSES_USE_TERMCAP@" = 0,
+                .@"@NCURSES_USE_DATABASE@" = 1,
+                .@"@NCURSES_CONST@" = "const",
+                .@"@NCURSES_PATCH@" = ncurses_version.patch_str(b),
+                .@"@NCURSES_SP_FUNCS@" = 1,
             },
-            .include_path = "MKterm.h.awk",
-            .add_comment = false,
-        }, .{
-            .NCURSES_MAJOR = ncurses_version.major,
-            .NCURSES_MINOR = ncurses_version.minor,
-            .HAVE_TERMIO_H = options.only_posix(),
-            .HAVE_TERMIOS_H = options.only_posix(),
-            .NCURSES_TPARM_VARARGS = 1,
-            .BROKEN_LINKER = 0,
-            .cf_cv_enable_reentrant = 0,
-            .HAVE_TCGETATTR = 1,
-            .NCURSES_SBOOL = "char",
-            .NCURSES_EXT_COLORS = 1,
-            .EXP_WIN32_DRIVER = @as(u1, switch (options.target.result.os.tag) {
-                .windows => 1,
-                else => 0,
-            }),
-            .NCURSES_XNAMES = 1,
-            .NCURSES_USE_TERMCAP = 0,
-            .NCURSES_USE_DATABASE = 1,
-            .NCURSES_CONST = "const",
-            .NCURSES_PATCH = ncurses_version.patch_str(b),
-            .NCURSES_SP_FUNCS = 1,
-        });
+        );
+        headers_step.dependOn(&b.addInstallHeaderFile(
+            mkterm_h,
+            "MKterm.h.awk",
+        ).step);
+
         const term_h = runAwkTpl(
             b,
-            mkterm_h.getOutputFile(),
+            mkterm_h,
             &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
             "term.h",
         );
@@ -552,6 +558,7 @@ pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) La
 
 /// generates fallback.c
 /// replaces "./ncurses/tinfo/MKfallback.sh $(TERMINFO) $(TERMINFO_SRC) "$(TIC_PATH)" "$(INFOCMP_PATH)" $(FALLBACK_LIST)"
+/// /bin/sh -e ./tinfo/MKfallback.sh /usr/share/terminfo ../misc/terminfo.src "/usr/bin/tic" "/usr/bin/infocmp" screen linux vt100 xterm xterm-256color
 pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
     const exe = b.addExecutable(.{
         .name = "MKfallback.sh",
@@ -604,55 +611,57 @@ pub fn runConcatFiles(b: *Build, src: []const LazyPath, basename: []const u8) La
     return out;
 }
 
-/// Replaces keys in a file like configheader, but accepts lazypaths to files as arguments
-/// Keys for replacement have no particular syntax.
-pub fn runTemplateFileContens(b: *Build, src: LazyPath, basename: []const u8, args: anytype) LazyPath {
-    const exe = b.addExecutable(.{
-        .name = "template_file_contents",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/template_file_contents.zig"),
-            .target = b.graph.host,
-        }),
-    });
-    const run = b.addRunArtifact(exe);
-    run.stdio = .inherit;
-    run.addFileArg(src);
-    const out = run.addOutputFileArg(basename);
-    inline for (comptime std.meta.fieldNames(@TypeOf(args))) |field| {
-        const value = @field(args, field);
-        if (@typeInfo(@TypeOf(value)) == .optional) {
+pub const TemplateFileContents = struct {
+    /// Replaces keys in a file like configheader, but accepts lazypaths to files as arguments
+    /// Keys for replacement have no particular syntax.
+    pub fn run(b: *Build, src: LazyPath, basename: []const u8, args: anytype) LazyPath {
+        const exe = b.addExecutable(.{
+            .name = "template_file_contents",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/template_file_contents.zig"),
+                .target = b.graph.host,
+            }),
+        });
+        const run_exe = b.addRunArtifact(exe);
+        run_exe.addFileArg(src);
+        const out = run_exe.addOutputFileArg(basename);
+        inline for (comptime std.meta.fieldNames(@TypeOf(args))) |field| {
+            const value = @field(args, field);
+            run_exe.addArg(field);
+            addArg(b, run_exe, value);
+        }
+        return out;
+    }
+
+    fn addArg(b: *Build, run_exe: *Build.Step.Run, value: anytype) void {
+        const V = @TypeOf(value);
+        const Vinfo = @typeInfo(V);
+        if (Vinfo == .optional) {
             if (value) |v| {
-                run.addArg(field);
-                run.addFileArg(v);
+                addArg(b, run_exe, v);
             } else {
-                run.addArg(field);
-                run.addArg("");
+                run.addArg("b:");
             }
+        } else if (V == LazyPath) {
+            run_exe.addPrefixedFileArg("f:", value);
+        } else if (Vinfo == .pointer and
+            Vinfo.pointer.is_const and
+            (@typeInfo(Vinfo.pointer.child) == .array or Vinfo.pointer.size == .slice))
+        {
+            run_exe.addArg(b.fmt("b:{s}", .{value}));
+        } else if (comptime std.mem.containsAtLeast(std.meta.Tag(std.builtin.Type), &.{
+            .int,
+            .float,
+            .comptime_int,
+            .comptime_float,
+        }, 1, &.{Vinfo})) {
+            run_exe.addArg(b.fmt("b:{d}", .{value}));
         } else {
-            run.addArg(field);
-            run.addFileArg(value);
+            std.log.err("field: {s} {any} {}", .{ @typeName(V), value, Vinfo.pointer.size });
+            @panic("UNKNOWN FIELD");
         }
     }
-    return out;
-}
-
-/// a copy of std.Build.Step.ConfigHeader
-/// with the added option of "add_comment" to disable writing the comment at
-/// the top of the output file. ncurses needs to template an `.awk` file that
-/// does not support c-style comments.
-pub fn addConfigHeaderNoComment(
-    b: *Build,
-    options: ConfigHeaderNoComment.Options,
-    values: anytype,
-) *ConfigHeaderNoComment {
-    var options_copy = options;
-    if (options_copy.first_ret_addr == null)
-        options_copy.first_ret_addr = @returnAddress();
-
-    const config_header_step = ConfigHeaderNoComment.create(b, options_copy);
-    config_header_step.addValues(values);
-    return config_header_step;
-}
+};
 
 pub const Tests = struct {
     dir: []const u8 = "test",

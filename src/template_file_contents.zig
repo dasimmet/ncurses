@@ -1,12 +1,15 @@
 const std = @import("std");
 
 // usage:
-// template_file_contents <template_filepath> <output_filepath> [<key_name> <value_filepath>]
+// template_file_contents <template_filepath> <output_filepath> [<key_name> <value>]
 //
 // reads a <template_filename> and a list of pairs of
-// <key_name> and <value_filepath>,
+// <key_name> and <value>,
 // then replaces every occurrence of <key_name> in the template
-// with the contents of <value_filepath>
+// with:
+// - if value starts with "f:", read the file at the following path
+// - if it starts with b: use the following bytes literally
+// - otherwise error out
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -32,20 +35,29 @@ pub fn main(init: std.process.Init) !void {
     defer output.interface.flush() catch unreachable;
     const writer = &output.interface;
 
-    var files = std.ArrayList([]const u8).empty;
-    var files_used = std.ArrayList(usize).empty;
+    var values = std.ArrayList([]const u8).empty;
+    var values_used = std.ArrayList(usize).empty;
     defer {
-        for (files.items) |it| gpa.free(it);
-        files.deinit(gpa);
-        files_used.deinit(gpa);
+        for (values.items) |it| gpa.free(it);
+        values.deinit(gpa);
+        values_used.deinit(gpa);
     }
     {
         var arg_pos: usize = 0;
         while (arg_pos < tpl_args.len) : (arg_pos += 2) {
             const value = tpl_args[arg_pos + 1];
-            const v_file = try cwd.readFileAlloc(io, value, gpa, .unlimited);
-            try files.append(gpa, v_file);
-            try files_used.append(gpa, 0);
+            if (std.mem.startsWith(u8, value, "f:")) {
+                const v_file = try cwd.readFileAlloc(io, value["f:".len..], gpa, .unlimited);
+                try values.append(gpa, v_file);
+                try values_used.append(gpa, 0);
+            } else if (std.mem.startsWith(u8, value, "b:")) {
+                try values.append(gpa, try gpa.dupe(u8, value["b:".len..]));
+                try values_used.append(gpa, 0);
+            } else {
+                std.log.err("unkwn arg pair: {s}", .{tpl_args[arg_pos]});
+                std.log.err("unkwn arg pair: {s}", .{value});
+                return error.InvalidArg;
+            }
         }
     }
 
@@ -69,16 +81,16 @@ pub fn main(init: std.process.Init) !void {
         if (next_key) |nk| {
             const key = tpl_args[nk];
             try writer.writeAll(infile_rest[0..key_pos]);
-            try writer.writeAll(files.items[nk / 2]);
+            try writer.writeAll(values.items[nk / 2]);
             in_pos += key_pos + key.len;
-            files_used.items[nk / 2] += 1;
+            values_used.items[nk / 2] += 1;
         } else {
             try writer.writeAll(infile_rest);
             in_pos = infile.len;
         }
     }
     var found_unused: bool = false;
-    for (files_used.items, 0..) |fu, i| {
+    for (values_used.items, 0..) |fu, i| {
         if (fu == 0) {
             found_unused = true;
             const key = tpl_args[2 * i];
