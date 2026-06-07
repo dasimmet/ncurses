@@ -7,7 +7,7 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(arena);
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.assert(args.len >= 4);
+    std.debug.assert(args.len == 4);
     const outpath = args[1];
     const curses_h = args[2];
     const awk = args[3];

@@ -348,7 +348,7 @@ pub fn build(b: *Build) void {
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
 
-    if (b.option(bool, "use_gen_libc", "") orelse false) {
+    {
         const awk_dep = b.dependency("awk", .{
             .target = b.graph.host,
             .optimize = .ReleaseSmall,
@@ -359,14 +359,11 @@ pub fn build(b: *Build) void {
             .file = lib_gen,
             .flags = Sources.flags(options.target),
         });
-    } else {
-        modncurses.addCSourceFiles(.{
-            .root = b.path("src/c"),
-            .flags = Sources.flags(options.target),
-            .files = &.{
-                "lib_gen.c",
-            },
-        });
+
+        headers_step.dependOn(&b.addInstallHeaderFile(
+            lib_gen,
+            "lib_gen.c",
+        ).step);
     }
 
     const fallback_c = runMakeFallbackC(b, &.{});
