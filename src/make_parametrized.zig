@@ -50,6 +50,7 @@ pub fn main(init: std.process.Init) !void {
 
         line: while (try reader.interface.takeDelimiter('\n')) |line| {
             if (line.len == 0) continue;
+
             inline for (&.{
                 "#",
                 "capalias",
@@ -64,17 +65,21 @@ pub fn main(init: std.process.Init) !void {
             const row1 = rows.next() orelse return error.NotEnoughColumns1;
             const row2 = rows.next() orelse return error.NotEnoughColumns2;
             const row3 = rows.next() orelse return error.NotEnoughColumns3;
+
             if (!std.mem.eql(u8, row3, "str")) continue :line;
+
             if (std.mem.startsWith(u8, row1, "acs_")) {
                 try writer.print("-1,\t/*  {s}  */\n", .{row2});
                 entries += 1;
                 continue :line;
             }
+
             if (std.mem.startsWith(u8, row1, "label_format")) {
                 try writer.print("-1,\t/*  {s}  */\n", .{row2});
                 entries += 1;
                 continue :line;
             }
+
             if (std.mem.find(u8, line, "#")) |hash_pos| {
                 if (hash_pos < line.len - 1) {
                     const hash_num = line[hash_pos + 1];
