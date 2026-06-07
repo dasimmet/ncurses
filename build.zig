@@ -354,12 +354,11 @@ pub fn build(b: *Build) void {
         });
     }
 
-    const fallback_c = b.path("src/c/fallback.c");
-    // const fallback_c = runMakeFallbackC(b, &.{});
-    // b.step("fallback", "").dependOn(&b.addInstallFile(
-    //     fallback_c,
-    //     "fallback.c",
-    // ).step);
+    const fallback_c = runMakeFallbackC(b, &.{});
+    b.step("fallback", "").dependOn(&b.addInstallFile(
+        fallback_c,
+        "fallback.c",
+    ).step);
 
     modncurses.addCSourceFile(.{
         .file = fallback_c,
