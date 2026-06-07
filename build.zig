@@ -202,6 +202,14 @@ pub fn build(b: *Build) void {
     libncurses.installConfigHeader(dll_h);
     modncurses.addIncludePath(b.path("src/c"));
 
+    {
+        const hashsize_h = runMakeHashsizeH(b, &.{
+            ncurses.path("include/Caps"),
+            ncurses.path("include/Caps-ncurses"),
+        });
+        modncurses.addIncludePath(hashsize_h.dirname());
+    }
+
     const ncurses_zig_defs = ncurses_defs_header(b, options);
 
     const ncurses_cfg_h = TemplateFileContents.run(
@@ -608,6 +616,23 @@ pub fn runConcatFiles(b: *Build, src: []const LazyPath, basename: []const u8) La
         run.addPrefixedFileArg("file://", lp);
     }
     return out;
+}
+
+pub fn runMakeHashsizeH(b: *Build, src: []const LazyPath) LazyPath {
+    const make_hashsize_exe = b.addExecutable(.{
+        .name = "make_hashsize",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/make_hashsize.zig"),
+            .optimize = .Debug,
+            .target = b.graph.host,
+        }),
+    });
+    const run_make_hashisze = b.addRunArtifact(make_hashsize_exe);
+    const hashsize_h = run_make_hashisze.addOutputFileArg("hashsize.h");
+    for (src) |arg| {
+        run_make_hashisze.addFileArg(arg);
+    }
+    return hashsize_h;
 }
 
 pub const TemplateFileContents = struct {

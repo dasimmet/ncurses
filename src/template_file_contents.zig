@@ -35,7 +35,9 @@ pub fn main(init: std.process.Init) !void {
     defer output.interface.flush() catch unreachable;
     const writer = &output.interface;
 
+    // holds replacement strings
     var values = std.ArrayList([]const u8).empty;
+    // tracks usage of values in template
     var values_used = std.ArrayList(usize).empty;
     defer {
         for (values.items) |it| gpa.free(it);
@@ -51,7 +53,11 @@ pub fn main(init: std.process.Init) !void {
                 try values.append(gpa, v_file);
                 try values_used.append(gpa, 0);
             } else if (std.mem.startsWith(u8, value, "b:")) {
-                try values.append(gpa, try gpa.dupe(u8, value["b:".len..]));
+                const arg_copy = try gpa.dupe(u8, value["b:".len..]);
+                values.append(gpa, arg_copy) catch |err| {
+                    gpa.free(arg_copy);
+                    return err;
+                };
                 try values_used.append(gpa, 0);
             } else {
                 std.log.err("unkwn arg pair: {s}", .{tpl_args[arg_pos]});
@@ -65,25 +71,28 @@ pub fn main(init: std.process.Init) !void {
     while (in_pos < infile.len) {
         const infile_rest = infile[in_pos..];
         var arg_pos: usize = 0;
-        var key_pos: usize = infile.len;
-        var next_key: ?usize = null;
-        while (arg_pos < tpl_args.len) : (arg_pos += 2) {
-            const key = tpl_args[arg_pos];
-            const key_idx = std.mem.indexOf(u8, infile_rest, key);
-            if (key_idx) |kx| {
+        var key_pos: usize = std.math.maxInt(usize);
+        var found_key: ?usize = null;
+        while (arg_pos * 2 < tpl_args.len) : (arg_pos += 1) {
+            const key = tpl_args[arg_pos * 2];
+            if (std.mem.find(
+                u8,
+                infile_rest,
+                key,
+            )) |kx| {
                 if (kx < key_pos) {
                     key_pos = kx;
-                    next_key = arg_pos;
+                    found_key = arg_pos;
                 }
             }
         }
 
-        if (next_key) |nk| {
-            const key = tpl_args[nk];
+        if (found_key) |next_key_pos| {
+            const key = tpl_args[next_key_pos * 2];
             try writer.writeAll(infile_rest[0..key_pos]);
-            try writer.writeAll(values.items[nk / 2]);
+            try writer.writeAll(values.items[next_key_pos]);
             in_pos += key_pos + key.len;
-            values_used.items[nk / 2] += 1;
+            values_used.items[next_key_pos] += 1;
         } else {
             try writer.writeAll(infile_rest);
             in_pos = infile.len;
@@ -96,7 +105,7 @@ pub fn main(init: std.process.Init) !void {
             const key = tpl_args[2 * i];
             const value = tpl_args[2 * i + 1];
             std.log.err("unused template arg:  '{s}'", .{key});
-            std.log.err("unused template file: '{s}'", .{value});
+            std.log.err("unused template value: '{s}'", .{value});
         }
     }
     if (found_unused) std.process.exit(1);
