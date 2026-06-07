@@ -60,13 +60,6 @@ pub fn main(init: std.process.Init) !void {
                 if (std.mem.startsWith(u8, line, skip_str)) continue :line;
             }
 
-            // $3 != "str"{next;}
-            // $1 ~ /^acs_/ {print "-1,\t/* ", $2, " */"; count++; next;}
-            // $1 ~ /^label_format/ {print "-1,\t/* ", $2, " */"; count++; next;}
-            // $0 ~ /#[0-9]/ {print "1,\t/* ", $2, " */"; count++; next;}
-            //    {print "0,\t/* ", $2, " */"; count++;}
-            // END{printf("} /* %d entries */;\n\n", count);}
-
             var rows = std.mem.tokenizeAny(u8, line, &std.ascii.whitespace);
             const row1 = rows.next() orelse return error.NotEnoughColumns1;
             const row2 = rows.next() orelse return error.NotEnoughColumns2;
