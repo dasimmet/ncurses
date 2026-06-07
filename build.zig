@@ -210,11 +210,17 @@ pub fn build(b: *Build) void {
     {
         const hashsize_h = runMakeHashsizeH(b, caps_files);
         modncurses.addIncludePath(hashsize_h.dirname());
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(hashsize_h, "hashsize.h").step,
+        );
     }
 
     {
         const parametrized_h = runMakeParametrizedH(b, caps_files);
         modncurses.addIncludePath(parametrized_h.dirname());
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(parametrized_h, "parametrized.h").step,
+        );
     }
 
     const ncurses_zig_defs = ncurses_defs_header(b, options);
