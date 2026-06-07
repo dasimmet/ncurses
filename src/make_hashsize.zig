@@ -26,7 +26,7 @@ pub fn main(init: std.process.Init) !void {
         var read_buf: [4096]u8 = undefined;
         var reader = fd.reader(io, &read_buf);
 
-        outer: while (try reader.interface.takeDelimiter('\n')) |line| {
+        line: while (try reader.interface.takeDelimiter('\n')) |line| {
             if (line.len == 0) continue;
             inline for (&.{
                 "#",
@@ -36,7 +36,7 @@ pub fn main(init: std.process.Init) !void {
                 "userdef",
                 "used_by",
             }) |skip_str| {
-                if (std.mem.startsWith(u8, line, skip_str)) continue :outer;
+                if (std.mem.startsWith(u8, line, skip_str)) continue :line;
             }
             hashsize += 1;
         }

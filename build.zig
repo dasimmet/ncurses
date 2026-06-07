@@ -212,6 +212,11 @@ pub fn build(b: *Build) void {
         modncurses.addIncludePath(hashsize_h.dirname());
     }
 
+    {
+        const parametrized_h = runMakeParametrizedH(b, caps_files);
+        modncurses.addIncludePath(parametrized_h.dirname());
+    }
+
     const ncurses_zig_defs = ncurses_defs_header(b, options);
 
     const ncurses_cfg_h = TemplateFileContents.run(
@@ -630,6 +635,24 @@ pub fn runMakeHashsizeH(b: *Build, src: []const LazyPath) LazyPath {
         run_make_hashisze.addFileArg(arg);
     }
     return hashsize_h;
+}
+
+// generates parametrized.h by reading lines in the used caps files
+pub fn runMakeParametrizedH(b: *Build, src: []const LazyPath) LazyPath {
+    const make_parametrized_exe = b.addExecutable(.{
+        .name = "make_parametrized",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/make_parametrized.zig"),
+            .optimize = .Debug,
+            .target = b.graph.host,
+        }),
+    });
+    const run_make_parametrized = b.addRunArtifact(make_parametrized_exe);
+    const parametrized_h = run_make_parametrized.addOutputFileArg("parametrized.h");
+    for (src) |arg| {
+        run_make_parametrized.addFileArg(arg);
+    }
+    return parametrized_h;
 }
 
 pub const TemplateFileContents = struct {
