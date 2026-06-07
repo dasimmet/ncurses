@@ -1,12 +1,12 @@
 .{
     .name = .ncurses,
-    .version = "6.5.20240427",
+    .version = "6.6.20260606",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0xbfb0fbf798176298,
     .dependencies = .{
         .ncurses = .{
-            .url = "https://invisible-island.net/archives/ncurses/ncurses-6.5.tar.gz",
-            .hash = "N-V-__8AAMZOFwGYoq9VA4jW9LOy4Ud9bufE7x2ep88NNqFr",
+            .url = "https://invisible-island.net/archives/ncurses/ncurses-6.6.tar.gz",
+            .hash = "N-V-__8AAFkJHAEvDxnkKVw6cf8JNwIhMrZVSn1_T75XdFCL",
         },
         .awk = .{
             .url = "git+https://github.com/dasimmet/zig-awk.git#dd92d12e3030ab1c64e24db22a10e4e7f4f31058",
