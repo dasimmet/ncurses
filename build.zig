@@ -79,6 +79,11 @@ pub fn build(b: *Build) void {
     });
     b.installArtifact(libncurses);
 
+    const caps_files: []const LazyPath = &.{
+        ncurses.path("include/Caps"),
+        ncurses.path("include/Caps-ncurses"),
+    };
+
     inline for (Sources.all) |source| {
         modncurses.addCSourceFiles(.{
             .root = ncurses.path(source.dir),
@@ -144,7 +149,7 @@ pub fn build(b: *Build) void {
         .file = runAwkTpl(
             b,
             ncurses.path("ncurses/tinfo/MKcodes.awk"),
-            &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
+            caps_files,
             "codes.c",
         ),
         .flags = Sources.flags(options.target),
@@ -203,10 +208,7 @@ pub fn build(b: *Build) void {
     modncurses.addIncludePath(b.path("src/c"));
 
     {
-        const hashsize_h = runMakeHashsizeH(b, &.{
-            ncurses.path("include/Caps"),
-            ncurses.path("include/Caps-ncurses"),
-        });
+        const hashsize_h = runMakeHashsizeH(b, caps_files);
         modncurses.addIncludePath(hashsize_h.dirname());
     }
 
@@ -320,19 +322,13 @@ pub fn build(b: *Build) void {
     const curses_h_parts: []const LazyPath = switch (options.widechar) {
         true => &.{
             curses_tmp_h.getOutputFile(),
-            runMakeKeyDefs(b, &.{
-                ncurses.path("include/Caps"),
-                ncurses.path("include/Caps-ncurses"),
-            }, "key_defs_tmp.h"),
+            runMakeKeyDefs(b, caps_files, "key_defs_tmp.h"),
             ncurses.path("include/curses.wide"), //add in widechar headers
             ncurses.path("include/curses.tail"),
         },
         false => &.{
             curses_tmp_h.getOutputFile(),
-            runMakeKeyDefs(b, &.{
-                ncurses.path("include/Caps"),
-                ncurses.path("include/Caps-ncurses"),
-            }, "key_defs_tmp.h"),
+            runMakeKeyDefs(b, caps_files, "key_defs_tmp.h"),
             ncurses.path("include/curses.tail"),
         },
     };
@@ -481,7 +477,7 @@ pub fn build(b: *Build) void {
         const term_h = runAwkTpl(
             b,
             mkterm_h,
-            &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
+            caps_files,
             "term.h",
         );
         modncurses.addIncludePath(term_h.dirname());
@@ -494,7 +490,7 @@ pub fn build(b: *Build) void {
         const names_c = runAwkTpl(
             b,
             ncurses.path("ncurses/tinfo/MKnames.awk"),
-            &.{ ncurses.path("include/Caps"), ncurses.path("include/Caps-ncurses") },
+            caps_files,
             "names.c",
         );
         makekeys.addIncludePath(names_c.dirname());
@@ -618,6 +614,7 @@ pub fn runConcatFiles(b: *Build, src: []const LazyPath, basename: []const u8) La
     return out;
 }
 
+// generates hashsize.h by counting lines in the used caps files
 pub fn runMakeHashsizeH(b: *Build, src: []const LazyPath) LazyPath {
     const make_hashsize_exe = b.addExecutable(.{
         .name = "make_hashsize",
