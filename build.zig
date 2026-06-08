@@ -349,12 +349,7 @@ pub fn build(b: *Build) void {
     );
 
     {
-        const awk_dep = b.dependency("awk", .{
-            .target = b.graph.host,
-            .optimize = .ReleaseSmall,
-        });
-
-        const lib_gen = runMakeLibGenC(b, curses_h, awk_dep.artifact("awk").getEmittedBin());
+        const lib_gen = runMakeLibGenC(b, curses_h, .generated);
         modncurses.addCSourceFile(.{
             .file = lib_gen,
             .flags = Sources.flags(options.target),
@@ -590,7 +585,7 @@ pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
 /// replaces:
 /// CC="zig 0.15.1 cc -E -DHAVE_CONFIG_H -DBUILDING_NCURSES -I../ncurses -I. -I../include -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DNDEBUG"
 /// ./base/MKlib_gen.sh "$CC" "mawk" generated <../include/curses.h
-pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
+pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, mode: enum { generated, implemented }) LazyPath {
     const exe = b.addExecutable(.{
         .name = "MKlib_gen.sh",
         .root_module = b.createModule(.{
@@ -600,8 +595,9 @@ pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
     });
     const run = b.addRunArtifact(exe);
     const out = run.addOutputFileArg("lib_gen.c");
+    run.addArg(b.graph.zig_exe);
     run.addFileArg(curses_h);
-    run.addFileArg(awk);
+    run.addArg(@tagName(mode));
     return out;
 }
 
