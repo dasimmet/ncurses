@@ -97,7 +97,6 @@ pub fn main(init: std.process.Init) !void {
                         sig = sig[0 .. sig.len - 1];
                     }
                     sig = std.mem.trim(u8, sig, " \t/*");
-                    std.log.info("sig: '{s}'", .{sig});
 
                     try generateWrapperFunctionFromSignature(w, gpa, sig);
                 }
