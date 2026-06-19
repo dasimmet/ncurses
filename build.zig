@@ -114,6 +114,20 @@ pub fn build(b: *Build) void {
                 "wcwidth.c",
             },
         });
+        modncurses.addCSourceFiles(.{
+            .root = ncurses.path("ncurses/tinfo"),
+            .flags = Sources.flags(options.target),
+            .files = &.{
+                "tinfo_driver.c",
+            },
+        });
+        modncurses.addCSourceFiles(.{
+            .root = ncurses.path("ncurses/base"),
+            .flags = Sources.flags(options.target),
+            .files = &.{
+                "lib_driver.c",
+            },
+        });
     }
 
     modncurses.addCSourceFiles(.{
@@ -869,7 +883,7 @@ pub const Sources = struct {
             "lib_delch.c",
             "lib_delwin.c",
             "lib_dft_fgbg.c",
-            "lib_driver.c",
+            // "lib_driver.c",
             "lib_echo.c",
             "lib_endwin.c",
             "lib_erase.c",
@@ -1135,7 +1149,7 @@ pub const Sources = struct {
             "read_entry.c",
             "read_termcap.c",
             "strings.c",
-            "tinfo_driver.c",
+            // "tinfo_driver.c",
             "trim_sgr0.c",
             "use_screen.c",
             "write_entry.c",
@@ -1354,8 +1368,7 @@ pub fn ncurses_defs_header(
         .HAVE_USE_EXTENDED_NAMES = 1,
         .IOSTREAM_NAMESPACE = 1,
         .USE_STRING_HACKS = 1,
-        // we do not build for now without this, even on linux
-        .USE_TERM_DRIVER = options.only_windows(),
+        .USE_TERM_DRIVER = options.only_windows_null(),
         .EXP_WIN32_DRIVER = options.only_windows_null(),
         .USE_WIN32CON_DRIVER = options.only_windows_null(),
     });
