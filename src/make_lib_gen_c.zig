@@ -68,11 +68,11 @@ pub fn main(init: std.process.Init) !void {
     while (try reader.interface.takeDelimiter('\n')) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
-        if (std.mem.startsWith(u8, trimmed, "#if")) {
-            try w.writeAll(line);
-            try w.writeAll("\n");
-            continue;
-        }
+        // if (std.mem.startsWith(u8, trimmed, "#if")) {
+        //     try w.writeAll(line);
+        //     try w.writeAll("\n");
+        //     continue;
+        // }
 
         // Check if this line mentions "generated:" or "implemented:"
         if (std.mem.containsAtLeast(u8, trimmed, 1, use_marker)) {
@@ -96,7 +96,7 @@ pub fn main(init: std.process.Init) !void {
                     if (std.mem.endsWith(u8, sig, ";")) {
                         sig = sig[0 .. sig.len - 1];
                     }
-                    sig = std.mem.trim(u8, sig, " \t");
+                    sig = std.mem.trim(u8, sig, " \t/*");
                     std.log.info("sig: '{s}'", .{sig});
 
                     try generateWrapperFunctionFromSignature(w, gpa, sig);
@@ -128,48 +128,45 @@ fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allo
     // Parse parameters
     const params_str = std.mem.trim(u8, signature[paren_start + 1 .. paren_end], " \t");
 
-    var params = std.ArrayList(Param).empty;
+    var params = std.ArrayList([]const u8).empty;
     defer {
-        for (params.items) |p| {
-            allocator.free(p.type_str);
-            allocator.free(p.name);
-        }
         params.deinit(allocator);
     }
 
     if (!std.mem.eql(u8, params_str, "void") and params_str.len > 0) {
         var param_list = std.mem.tokenizeSequence(u8, params_str, ",");
-        while (param_list.next()) |param| {
+        var p_i: usize = 1;
+        while (param_list.next()) |param| : (p_i += 1) {
             const trimmed_param = std.mem.trim(u8, param, " \t");
             if (trimmed_param.len == 0) continue;
 
-            // Parse individual parameter (type name)
-            var param_idx = trimmed_param.len;
-            while (param_idx > 0 and (std.ascii.isAlphanumeric(trimmed_param[param_idx - 1]) or trimmed_param[param_idx - 1] == '_')) {
-                param_idx -= 1;
-            }
-            const p_name = std.mem.trim(u8, trimmed_param[param_idx..], " \t");
-            const p_type = std.mem.trim(u8, trimmed_param[0..param_idx], " \t");
+            try params.append(allocator, trimmed_param);
+        }
+    }
 
-            if (p_name.len > 0 and p_type.len > 0) {
-                try params.append(allocator, .{
-                    .type_str = try allocator.dupe(u8, p_type),
-                    .name = try allocator.dupe(u8, p_name),
+    // Output function wrapper
+    try writer.print("{s} {s} (", .{
+        return_type,
+        func_name,
+    });
+    if (std.mem.eql(u8, params_str, "void")) {
+        try writer.writeAll("void");
+    } else {
+        for (params.items, 0..) |p, i| {
+            if (i > 0) try writer.writeAll(", ");
+            if (i == params.items.len - 1) {
+                try writer.print("{s} z", .{
+                    p,
+                });
+            } else {
+                try writer.print("{s} a{d}", .{
+                    p, i + 1,
                 });
             }
         }
     }
 
-    std.log.info("return: '{s}'", .{return_type});
-    std.log.info("func: '{s}'", .{func_name});
-    // Output function wrapper
-    try writer.print("{s} {s} ({s})\n", .{
-        return_type,
-        func_name,
-        signature[paren_start..],
-    });
-
-    try writer.writeAll("{\n");
+    try writer.writeAll(")\n{\n");
 
     // Generate trace call
     try writer.writeAll("\tT((T_CALLED(\"");
@@ -179,11 +176,11 @@ fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allo
     for (params.items, 0..) |p, i| {
         if (i > 0) try writer.writeAll(",");
         try writer.writeAll("%");
-        if (std.mem.containsAtLeast(u8, p.type_str, 1, "*")) {
+        if (std.mem.containsAtLeast(u8, p, 1, "*")) {
             try writer.writeAll("p");
-        } else if (std.mem.containsAtLeast(u8, p.type_str, 1, "chtype")) {
+        } else if (std.mem.containsAtLeast(u8, p, 1, "chtype")) {
             try writer.writeAll("s");
-        } else if (std.mem.containsAtLeast(u8, p.type_str, 1, "int")) {
+        } else if (std.mem.containsAtLeast(u8, p, 1, "int")) {
             try writer.writeAll("d");
         } else {
             try writer.writeAll("s");
@@ -194,12 +191,24 @@ fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allo
 
     for (params.items, 0..) |p, i| {
         try writer.writeAll(", ");
-        if (std.mem.containsAtLeast(u8, p.type_str, 1, "chtype")) {
-            try writer.print("_tracechtype2({d},{s})", .{ i, p.name });
-        } else if (std.mem.containsAtLeast(u8, p.type_str, 1, "*")) {
-            try writer.print("(const void *){s}", .{p.name});
+        if (std.mem.containsAtLeast(u8, p, 1, "chtype")) {
+            if (i == params.items.len - 1) {
+                try writer.print("_tracechtype2({d},z)", .{i});
+            } else {
+                try writer.print("_tracechtype2({d},a{d})", .{ i, i + 1 });
+            }
+        } else if (std.mem.containsAtLeast(u8, p, 1, "*")) {
+            if (i == params.items.len - 1) {
+                try writer.print("(const void *)z", .{});
+            } else {
+                try writer.print("(const void *)a{d}", .{i + 1});
+            }
         } else {
-            try writer.writeAll(p.name);
+            if (i == params.items.len - 1) {
+                try writer.writeAll("z");
+            } else {
+                try writer.print("a{d}", .{i + 1});
+            }
         }
     }
 
@@ -207,32 +216,27 @@ fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allo
 
     // Generate return statement
     const wrapper_func = if (std.mem.startsWith(u8, func_name, "w"))
-        func_name
-    else if (std.mem.startsWith(u8, func_name, "add"))
-        "wadd"
-    else if (std.mem.startsWith(u8, func_name, "attr"))
-        "wattr"
-    else if (std.mem.startsWith(u8, func_name, "bkgd"))
-        "wbkgd"
-    else if (std.mem.startsWith(u8, func_name, "border"))
-        "wborder"
-    else if (std.mem.startsWith(u8, func_name, "box"))
-        "wbox"
+        try allocator.dupe(u8, func_name)
     else
-        "w";
+        try std.fmt.allocPrint(allocator, "w{s}", .{func_name});
+    defer allocator.free(wrapper_func);
 
-    if (std.mem.eql(u8, return_type, "void")) {
+    if (std.mem.eql(u8, return_type, "NCURSES_EXPORT(void)")) {
         try writer.print("\t{s}(", .{wrapper_func});
     } else {
         try writer.print("\treturnCode({s}(", .{wrapper_func});
     }
 
     try writer.writeAll("stdscr");
-    for (params.items) |p| {
-        try writer.print(",({s})", .{p.name});
+    for (params.items, 0..) |_, i| {
+        if (i == params.items.len - 1) {
+            try writer.writeAll(", z");
+        } else {
+            try writer.print(", a{d}", .{i + 1});
+        }
     }
 
-    if (std.mem.eql(u8, return_type, "void")) {
+    if (std.mem.eql(u8, return_type, "NCURSES_EXPORT(void)")) {
         try writer.writeAll(");\n\treturnVoid;\n");
     } else {
         try writer.writeAll("));\n");
