@@ -1296,7 +1296,7 @@ pub fn ncurses_defs_header(
         .HAVE_SETFSUID = 1,
         .HAVE_SETVBUF = 1,
         .HAVE_SIGACTION = options.only_posix_null(),
-        .HAVE_SIGVEC = 1,
+        .HAVE_SIGVEC = options.only_posix_null(),
         .HAVE_SNPRINTF = 1,
         .HAVE_STRSTR = 1,
         .HAVE_SYSCONF = 1,
