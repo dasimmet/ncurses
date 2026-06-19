@@ -16,7 +16,10 @@ pub fn main(init: std.process.Init) !void {
     const outpath = args[1];
     _ = args[2]; // zig exe
     const curses_h_path = args[3];
-    _ = args[4]; // mode argument
+    const use_marker = args[4];
+    // const use_marker = try std.fmt.allocPrint(arena, "{s}:", .{
+    //     args[4],
+    // });
 
     // Read curses.h
     const curses_h_file = try cwd.openFile(io, curses_h_path, .{});
@@ -59,26 +62,26 @@ pub fn main(init: std.process.Init) !void {
     );
 
     // Parse curses.h for "extern" declarations with "generated" marker
-    var current_line = std.ArrayList(u8).empty;
-    defer current_line.deinit(gpa);
+    // var current_line = std.ArrayList(u8).empty;
+    // defer current_line.deinit(gpa);
 
     while (try reader.interface.takeDelimiter('\n')) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
-        // Check if this line mentions "generated:"
-        if (std.mem.containsAtLeast(u8, trimmed, 1, "generated:")) {
+        // Check if this line mentions "generated:" or "implemented:"
+        if (std.mem.containsAtLeast(u8, trimmed, 1, use_marker)) {
             // Add this line to current_line
-            if (current_line.items.len > 0) {
-                try current_line.append(gpa, ' ');
-            }
-            try current_line.appendSlice(gpa, trimmed);
+            // if (current_line.items.len > 0) {
+            //     try current_line.append(gpa, ' ');
+            // }
+            // try current_line.appendSlice(gpa, trimmed);
 
             // Now we have a complete declaration (might be multi-line)
-            const full_decl = std.mem.trim(u8, current_line.items, " \t\r");
+            const full_decl = std.mem.trim(u8, line, " \t\r");
 
             if (std.mem.startsWith(u8, full_decl, "extern")) {
                 // Extract the marker (e.g., "generated:LIB_FEATURE")
-                if (std.mem.indexOf(u8, full_decl, "generated:")) |marker_start| {
+                if (std.mem.indexOf(u8, full_decl, use_marker)) |marker_start| {
                     // Extract function signature (between "extern" and "generated")
                     const sig_start = "extern".len;
                     var sig = std.mem.trim(u8, full_decl[sig_start..marker_start], " \t\r");
@@ -88,22 +91,23 @@ pub fn main(init: std.process.Init) !void {
                         sig = sig[0 .. sig.len - 1];
                     }
                     sig = std.mem.trim(u8, sig, " \t");
+                    std.log.info("sig: '{s}'", .{sig});
 
                     try generateWrapperFunctionFromSignature(w, gpa, sig);
                 }
             }
 
-            current_line.clearRetainingCapacity();
-        } else if (std.mem.startsWith(u8, trimmed, "extern")) {
-            // Start of a potential multi-line declaration
-            if (current_line.items.len > 0) {
-                current_line.clearRetainingCapacity();
-            }
-            try current_line.appendSlice(gpa, trimmed);
-        } else if (current_line.items.len > 0) {
-            // Continue accumulating this multi-line declaration
-            try current_line.append(gpa, ' ');
-            try current_line.appendSlice(gpa, trimmed);
+            // current_line.clearRetainingCapacity();
+            // } else if (std.mem.startsWith(u8, trimmed, "extern")) {
+            //     // Start of a potential multi-line declaration
+            //     if (current_line.items.len > 0) {
+            //         current_line.clearRetainingCapacity();
+            //     }
+            //     try current_line.appendSlice(gpa, trimmed);
+            // } else if (current_line.items.len > 0) {
+            //     // Continue accumulating this multi-line declaration
+            //     try current_line.append(gpa, ' ');
+            //     try current_line.appendSlice(gpa, trimmed);
         }
     }
 
@@ -111,7 +115,7 @@ pub fn main(init: std.process.Init) !void {
 }
 fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allocator, signature: []const u8) !void {
     // Find opening parenthesis
-    const paren_start = std.mem.indexOf(u8, signature, "(") orelse return;
+    const paren_start = std.mem.lastIndexOf(u8, signature, "(") orelse return;
     const paren_end = std.mem.lastIndexOf(u8, signature, ")") orelse return;
 
     // Extract return type and function name
@@ -162,8 +166,10 @@ fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allo
         }
     }
 
+    std.log.info("return: '{s}'", .{return_type});
+    std.log.info("func: '{s}'", .{func_name});
     // Output function wrapper
-    try writer.print("NCURSES_EXPORT({s}) {s} ({s})\n", .{
+    try writer.print("{s} {s} ({s})\n", .{
         return_type,
         func_name,
         signature[paren_start..],
