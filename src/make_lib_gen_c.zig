@@ -68,6 +68,12 @@ pub fn main(init: std.process.Init) !void {
     while (try reader.interface.takeDelimiter('\n')) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
 
+        if (std.mem.startsWith(u8, trimmed, "#if")) {
+            try w.writeAll(line);
+            try w.writeAll("\n");
+            continue;
+        }
+
         // Check if this line mentions "generated:" or "implemented:"
         if (std.mem.containsAtLeast(u8, trimmed, 1, use_marker)) {
             // Add this line to current_line
@@ -96,22 +102,10 @@ pub fn main(init: std.process.Init) !void {
                     try generateWrapperFunctionFromSignature(w, gpa, sig);
                 }
             }
-
-            // current_line.clearRetainingCapacity();
-            // } else if (std.mem.startsWith(u8, trimmed, "extern")) {
-            //     // Start of a potential multi-line declaration
-            //     if (current_line.items.len > 0) {
-            //         current_line.clearRetainingCapacity();
-            //     }
-            //     try current_line.appendSlice(gpa, trimmed);
-            // } else if (current_line.items.len > 0) {
-            //     // Continue accumulating this multi-line declaration
-            //     try current_line.append(gpa, ' ');
-            //     try current_line.appendSlice(gpa, trimmed);
         }
     }
 
-    try writer.interface.flush();
+    try w.flush();
 }
 fn generateWrapperFunctionFromSignature(writer: anytype, allocator: std.mem.Allocator, signature: []const u8) !void {
     // Find opening parenthesis
