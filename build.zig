@@ -139,15 +139,25 @@ pub fn build(b: *Build) void {
         },
     });
 
-    modncurses.addCSourceFile(.{
-        .file = runAwkTpl(
-            b,
-            ncurses.path("ncurses/base/MKkeyname.awk"),
-            &.{b.path("src/c/keys.list")},
-            "lib_keyname.c",
-        ),
-        .flags = Sources.flags(options.target),
-    });
+    {
+        const keys_list = runMakeKeysList(b, &.{
+            ncurses.path("include/Caps"),
+            ncurses.path("include/Caps-ncurses"),
+        }, "keys.list");
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(keys_list, "keys.list").step,
+        );
+
+        modncurses.addCSourceFile(.{
+            .file = runAwkTpl(
+                b,
+                ncurses.path("ncurses/base/MKkeyname.awk"),
+                &.{keys_list},
+                "lib_keyname.c",
+            ),
+            .flags = Sources.flags(options.target),
+        });
+    }
 
     modncurses.addCSourceFile(.{
         .file = runAwkTpl(
@@ -573,6 +583,23 @@ pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) La
         .name = "MKkeydefs.sh",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/make_key_defs.zig"),
+            .target = b.graph.host,
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+    const out = run.addOutputFileArg(basename);
+    for (src) |s| {
+        run.addFileArg(s);
+    }
+    return out;
+}
+
+/// generates keys list from ncurses Caps files
+pub fn runMakeKeysList(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
+    const exe = b.addExecutable(.{
+        .name = "MKkeys_list.sh",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/make_keys_list.zig"),
             .target = b.graph.host,
         }),
     });
