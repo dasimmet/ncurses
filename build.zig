@@ -139,26 +139,6 @@ pub fn build(b: *Build) void {
         },
     });
 
-    {
-        const keys_list = runMakeKeysList(b, &.{
-            ncurses.path("include/Caps"),
-            ncurses.path("include/Caps-ncurses"),
-        }, "keys.list");
-        headers_step.dependOn(
-            &b.addInstallHeaderFile(keys_list, "keys.list").step,
-        );
-
-        modncurses.addCSourceFile(.{
-            .file = runAwkTpl(
-                b,
-                ncurses.path("ncurses/base/MKkeyname.awk"),
-                &.{keys_list},
-                "lib_keyname.c",
-            ),
-            .flags = Sources.flags(options.target),
-        });
-    }
-
     modncurses.addCSourceFile(.{
         .file = runAwkTpl(
             b,
@@ -421,16 +401,34 @@ pub fn build(b: *Build) void {
         .flags = Sources.flags(options.target),
     });
 
-    const makekeys_exe = b.addExecutable(.{
-        .name = "makekeys",
-        .root_module = makekeys,
-    });
+    {
+        const keys_list = runMakeKeysList(b, &.{
+            ncurses.path("include/Caps"),
+            ncurses.path("include/Caps-ncurses"),
+        }, "keys.list");
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(keys_list, "keys.list").step,
+        );
 
-    const run_mkkeys = b.addRunArtifact(makekeys_exe);
-    run_mkkeys.addFileArg(b.path("src/c/keys.list"));
-    const keytry_wf = b.addWriteFiles();
-    const keytry_h = keytry_wf.addCopyFile(run_mkkeys.captureStdOut(.{}), "init_keytry.h");
-    modncurses.addIncludePath(keytry_h.dirname());
+        modncurses.addCSourceFile(.{
+            .file = runAwkTpl(
+                b,
+                ncurses.path("ncurses/base/MKkeyname.awk"),
+                &.{keys_list},
+                "lib_keyname.c",
+            ),
+            .flags = Sources.flags(options.target),
+        });
+
+        const makekeys_exe = b.addExecutable(.{
+            .name = "makekeys",
+            .root_module = makekeys,
+        });
+        const run_mkkeys = b.addRunArtifact(makekeys_exe);
+        run_mkkeys.addFileArg(keys_list);
+        const keytry_h = run_mkkeys.captureStdOut(.{ .basename = "init_keytry.h" });
+        modncurses.addIncludePath(keytry_h.dirname());
+    }
 
     modncurses.addIncludePath(ncurses.path("include"));
     modncurses.addCMacro("BUILDING_NCURSES", "");
