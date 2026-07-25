@@ -427,6 +427,11 @@ pub fn build(b: *Build) void {
         const run_mkkeys = b.addRunArtifact(makekeys_exe);
         run_mkkeys.addFileArg(keys_list);
         const keytry_h = run_mkkeys.captureStdOut(.{ .basename = "init_keytry.h" });
+
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(keytry_h, "init_keytry.h").step,
+        );
+
         modncurses.addIncludePath(keytry_h.dirname());
     }
 
