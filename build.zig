@@ -20,6 +20,7 @@ pub const Options = struct {
     optimize: std.builtin.OptimizeMode,
     widechar: bool,
     @"opaque": bool,
+    bigstrings: bool,
     linkage: std.builtin.LinkMode,
 
     pub fn only_posix(self: @This()) u1 {
@@ -61,6 +62,7 @@ pub fn build(b: *Build) void {
         .optimize = b.standardOptimizeOption(.{}),
         .@"opaque" = !(b.option(bool, "no-opaque", "disable opaque support") orelse false),
         .widechar = !(b.option(bool, "no-widechar", "disable widechar support") orelse false),
+        .bigstrings = !(b.option(bool, "no-bigstrings", "disable widechar support") orelse false),
         .linkage = b.option(std.builtin.LinkMode, "linkage", "linkmode for the library") orelse .static,
     };
 
@@ -130,11 +132,91 @@ pub fn build(b: *Build) void {
         });
     }
 
+    const dll_h = b.addConfigHeader(.{
+        .include_path = "ncurses_dll.h",
+        .style = .{ .autoconf_at = ncurses.path("include/ncurses_dll.h.in") },
+    }, .{
+        .NCURSES_WRAP_PREFIX = "_nc_",
+    });
+    modncurses.addIncludePath(dll_h.getOutputDir());
+    libncurses.installConfigHeader(dll_h);
+
+    const ncurses_zig_defs = ncurses_defs_header(b, options);
+
+    const ncurses_cfg_h = TemplateFileContents.run(
+        b,
+        ncurses.path("include/ncurses_cfg.hin"),
+        "ncurses_cfg.h",
+        .{
+            .@"@DEFS@" = ncurses_zig_defs.getOutputFile(),
+        },
+    );
+    modncurses.addIncludePath(ncurses_cfg_h.dirname());
+    libncurses.installHeader(ncurses_cfg_h, "ncurses_cfg.h");
+
+    const defs_h = runMakeNCursesDef(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
+    modncurses.addIncludePath(defs_h.dirname());
+    headers_step.dependOn(&b.addInstallHeaderFile(defs_h, "ncurses_def.h").step);
+    libncurses.installHeader(defs_h, "ncurses_def.h");
+
+    const hashsize_h = runMakeHashsizeH(b, caps_files);
+    modncurses.addIncludePath(hashsize_h.dirname());
+    headers_step.dependOn(
+        &b.addInstallHeaderFile(hashsize_h, "hashsize.h").step,
+    );
+
+    {
+        const make_hash_exe = b.addExecutable(.{
+            .name = "make_hash",
+            .root_module = b.createModule(.{
+                .target = b.graph.host,
+                .optimize = .Debug,
+                .link_libc = true,
+            }),
+        });
+        make_hash_exe.root_module.addCSourceFile(.{
+            .file = ncurses.path("ncurses/tinfo/make_hash.c"),
+        });
+        make_hash_exe.root_module.addIncludePath(ncurses.path("ncurses"));
+        make_hash_exe.root_module.addIncludePath(ncurses.path("include"));
+        make_hash_exe.root_module.addIncludePath(dll_h.getOutputDir());
+        make_hash_exe.root_module.addIncludePath(ncurses_cfg_h.dirname());
+        make_hash_exe.root_module.addIncludePath(defs_h.dirname());
+        make_hash_exe.root_module.addIncludePath(hashsize_h.dirname());
+
+        const hash_run = b.addRunArtifact(make_hash_exe);
+        const caps_all = runConcatFiles(b, &.{
+            ncurses.path("include/Caps"),
+            ncurses.path("include/Caps-ncurses"),
+        }, "Caps-all");
+        hash_run.setStdIn(.{ .lazy_path = caps_all });
+
+        hash_run.addArgs(&.{ "1", "user", b.fmt("{d}", .{@as(u1, if (options.bigstrings) 1 else 0)}) });
+
+        const hash = hash_run.captureStdOut(.{ .basename = "hash.txt" });
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(hash, "hash.txt").step,
+        );
+
+        const userdefs_c = TemplateFileContents.run(b, b.path("src/comp_userdefs.c.in"), "comp_userdefs.c", .{
+            .@"%USERDEFS_HASH%" = hash,
+            .@"%USE_BIG_STRINGS%" = @as(u1, if (options.bigstrings) 1 else 0),
+        });
+
+        modncurses.addCSourceFile(.{
+            .flags = Sources.flags(options.target),
+            .file = userdefs_c,
+        });
+
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(userdefs_c, "comp_userdefs.c").step,
+        );
+    }
+
     modncurses.addCSourceFiles(.{
         .root = b.path("src/c"),
         .flags = Sources.flags(options.target),
         .files = &.{
-            "comp_userdefs.c",
             "comp_captab.c",
         },
     });
@@ -201,23 +283,7 @@ pub fn build(b: *Build) void {
         else => {},
     }
 
-    const dll_h = b.addConfigHeader(.{
-        .include_path = "ncurses_dll.h",
-        .style = .{ .autoconf_at = ncurses.path("include/ncurses_dll.h.in") },
-    }, .{
-        .NCURSES_WRAP_PREFIX = "_nc_",
-    });
-    modncurses.addIncludePath(dll_h.getOutputDir());
-    libncurses.installConfigHeader(dll_h);
     modncurses.addIncludePath(b.path("src/c"));
-
-    {
-        const hashsize_h = runMakeHashsizeH(b, caps_files);
-        modncurses.addIncludePath(hashsize_h.dirname());
-        headers_step.dependOn(
-            &b.addInstallHeaderFile(hashsize_h, "hashsize.h").step,
-        );
-    }
 
     {
         const parametrized_h = runMakeParametrizedH(b, caps_files);
@@ -227,18 +293,6 @@ pub fn build(b: *Build) void {
         );
     }
 
-    const ncurses_zig_defs = ncurses_defs_header(b, options);
-
-    const ncurses_cfg_h = TemplateFileContents.run(
-        b,
-        ncurses.path("include/ncurses_cfg.hin"),
-        "ncurses_cfg.h",
-        .{
-            .@"@DEFS@" = ncurses_zig_defs.getOutputFile(),
-        },
-    );
-    modncurses.addIncludePath(ncurses_cfg_h.dirname());
-    libncurses.installHeader(ncurses_cfg_h, "ncurses_cfg.h");
     headers_step.dependOn(
         &b.addInstallHeaderFile(ncurses_cfg_h, "ncurses_cfg.h").step,
     );
@@ -274,11 +328,6 @@ pub fn build(b: *Build) void {
             &b.addInstallHeaderFile(termcap_h.getOutputFile(), "termcap.h").step,
         );
     }
-
-    const defs_h = runMakeNCursesDef(b, ncurses.path("include/ncurses_defs"), "ncurses_def.h");
-    modncurses.addIncludePath(defs_h.dirname());
-    headers_step.dependOn(&b.addInstallHeaderFile(defs_h, "ncurses_def.h").step);
-    libncurses.installHeader(defs_h, "ncurses_def.h");
 
     const curses_tmp_h = b.addConfigHeader(.{
         .include_path = "curses_tmp.h",
@@ -750,7 +799,7 @@ pub const TemplateFileContents = struct {
         }, 1, &.{Vinfo})) {
             run_exe.addArg(b.fmt("b:{d}", .{value}));
         } else {
-            std.log.err("field: {s} {any} {}", .{ @typeName(V), value, Vinfo.pointer.size });
+            std.log.err("field: {s} {any}", .{ @typeName(V), value });
             @panic("UNKNOWN FIELD");
         }
     }
