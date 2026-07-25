@@ -119,6 +119,7 @@ pub fn build(b: *Build) void {
             .flags = Sources.flags(options.target),
             .files = &.{
                 "tinfo_driver.c",
+                "lib_win32util.c",
             },
         });
         modncurses.addCSourceFiles(.{
@@ -311,7 +312,6 @@ pub fn build(b: *Build) void {
             false => "chtype",
         },
         .cf_cv_enable_lp64 = 1,
-        .cf_cv_header_stdbool_h = 1,
         .cf_cv_typeof_chtype = switch (options.widechar) {
             true => "long",
             false => "uint32_t",
@@ -332,6 +332,10 @@ pub fn build(b: *Build) void {
         .HAVE_VSSCANF = 1,
         .NCURSES_CCHARW_MAX = 5,
         .NCURSES_SP_FUNCS = 1,
+
+        .USE_STDBOOL_H = 1,
+        .USE_BUILTIN_BOOL = 0,
+        .NCURSES_RGB_COLORS = 0,
     });
 
     const curses_h_parts: []const LazyPath = switch (options.widechar) {
@@ -495,10 +499,10 @@ pub fn build(b: *Build) void {
                 .@"@HAVE_TCGETATTR@" = 1,
                 .@"@NCURSES_SBOOL@" = "char",
                 .@"@NCURSES_EXT_COLORS@" = 1,
-                .@"@EXP_WIN32_DRIVER@" = @as(u1, switch (options.target.result.os.tag) {
-                    .windows => 1,
-                    else => 0,
-                }),
+                // .@"@EXP_WIN32_DRIVER@" = @as(u1, switch (options.target.result.os.tag) {
+                //     .windows => 1,
+                //     else => null,
+                // }),
                 .@"@NCURSES_XNAMES@" = 1,
                 .@"@NCURSES_USE_TERMCAP@" = 0,
                 .@"@NCURSES_USE_DATABASE@" = 1,
@@ -1170,7 +1174,6 @@ pub const Sources = struct {
             "lib_tputs.c",
             "lib_ttyflags.c",
             "lib_win32con.c",
-            "lib_win32util.c",
             // "make_hash.c",
             // "make_keys.c",
             "name_match.c",
