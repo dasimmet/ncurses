@@ -66,6 +66,8 @@ pub fn build(b: *Build) void {
         .linkage = b.option(std.builtin.LinkMode, "linkage", "linkmode for the library") orelse .static,
     };
 
+    const bigstrings_awkvar = b.fmt("bigstrings={d}", .{@as(u1, if (options.bigstrings) 1 else 0)});
+
     const headers_step = b.step("headers", "install the zig generated headers");
 
     const ncurses = b.dependency("ncurses", .{});
@@ -85,6 +87,7 @@ pub fn build(b: *Build) void {
         ncurses.path("include/Caps"),
         ncurses.path("include/Caps-ncurses"),
     };
+    const caps_all = runConcatFiles(b, caps_files, "Caps-all");
 
     inline for (Sources.all) |source| {
         modncurses.addCSourceFiles(.{
@@ -165,170 +168,6 @@ pub fn build(b: *Build) void {
         &b.addInstallHeaderFile(hashsize_h, "hashsize.h").step,
     );
 
-    {
-        const make_hash_exe = b.addExecutable(.{
-            .name = "make_hash",
-            .root_module = b.createModule(.{
-                .target = b.graph.host,
-                .optimize = .Debug,
-                .link_libc = true,
-            }),
-        });
-        make_hash_exe.root_module.addCSourceFile(.{
-            .file = ncurses.path("ncurses/tinfo/make_hash.c"),
-        });
-        make_hash_exe.root_module.addIncludePath(ncurses.path("ncurses"));
-        make_hash_exe.root_module.addIncludePath(ncurses.path("include"));
-        make_hash_exe.root_module.addIncludePath(dll_h.getOutputDir());
-        make_hash_exe.root_module.addIncludePath(ncurses_cfg_h.dirname());
-        make_hash_exe.root_module.addIncludePath(defs_h.dirname());
-        make_hash_exe.root_module.addIncludePath(hashsize_h.dirname());
-
-        const hash_run = b.addRunArtifact(make_hash_exe);
-        const caps_all = runConcatFiles(b, &.{
-            ncurses.path("include/Caps"),
-            ncurses.path("include/Caps-ncurses"),
-        }, "Caps-all");
-        hash_run.setStdIn(.{ .lazy_path = caps_all });
-
-        hash_run.addArgs(&.{ "1", "user", b.fmt("{d}", .{@as(u1, if (options.bigstrings) 1 else 0)}) });
-
-        const hash = hash_run.captureStdOut(.{ .basename = "hash.txt" });
-        headers_step.dependOn(
-            &b.addInstallHeaderFile(hash, "hash.txt").step,
-        );
-
-        const userdefs_c = TemplateFileContents.run(b, b.path("src/comp_userdefs.c.in"), "comp_userdefs.c", .{
-            .@"%USERDEFS_HASH%" = hash,
-            .@"%USE_BIG_STRINGS%" = @as(u1, if (options.bigstrings) 1 else 0),
-        });
-
-        modncurses.addCSourceFile(.{
-            .flags = Sources.flags(options.target),
-            .file = userdefs_c,
-        });
-
-        headers_step.dependOn(
-            &b.addInstallHeaderFile(userdefs_c, "comp_userdefs.c").step,
-        );
-    }
-
-    modncurses.addCSourceFiles(.{
-        .root = b.path("src/c"),
-        .flags = Sources.flags(options.target),
-        .files = &.{
-            "comp_captab.c",
-        },
-    });
-
-    modncurses.addCSourceFile(.{
-        .file = runAwkTpl(
-            b,
-            ncurses.path("ncurses/base/MKunctrl.awk"),
-            &.{},
-            "unctrl.c",
-        ),
-        .flags = Sources.flags(options.target),
-    });
-
-    modncurses.addCSourceFile(.{
-        .file = runAwkTpl(
-            b,
-            ncurses.path("ncurses/tinfo/MKcodes.awk"),
-            caps_files,
-            "codes.c",
-        ),
-        .flags = Sources.flags(options.target),
-    });
-
-    modncurses.addIncludePath(ncurses.path("include"));
-    modncurses.addCMacro("BUILDING_NCURSES", "");
-    modncurses.addCMacro("_DEFAULT_SOURCE", "");
-    modncurses.addCMacro("_XOPEN_SOURCE", "600");
-    modncurses.addCMacro("HAVE_CONFIG_H", "1");
-    if (options.linkage == .static) {
-        modncurses.addCMacro("NCURSES_STATIC", "");
-    }
-
-    libncurses.installHeader(
-        ncurses.path("include/term_entry.h"),
-        "term_entry.h",
-    );
-    libncurses.installHeader(
-        ncurses.path("include/nc_alloc.h"),
-        "nc_alloc.h",
-    );
-
-    inline for (&.{
-        "cursesapp.h",
-        "cursesf.h",
-        "cursesm.h",
-        "cursesp.h",
-        "cursesw.h",
-        "cursslk.h",
-    }) |h| {
-        libncurses.installHeader(ncurses.path(b.pathJoin(&.{ "c++", h })), h);
-    }
-    switch (options.target.result.os.tag) {
-        .windows => {
-            libncurses.installHeader(
-                ncurses.path("include/win32_curses.h"),
-                "win32_curses.h",
-            );
-            libncurses.installHeader(
-                ncurses.path("include/nc_win32.h"),
-                "nc_win32.h",
-            );
-        },
-        else => {},
-    }
-
-    modncurses.addIncludePath(b.path("src/c"));
-
-    {
-        const parametrized_h = runMakeParametrizedH(b, caps_files);
-        modncurses.addIncludePath(parametrized_h.dirname());
-        headers_step.dependOn(
-            &b.addInstallHeaderFile(parametrized_h, "parametrized.h").step,
-        );
-    }
-
-    headers_step.dependOn(
-        &b.addInstallHeaderFile(ncurses_cfg_h, "ncurses_cfg.h").step,
-    );
-
-    const unctrl_h = b.addConfigHeader(.{
-        .include_path = "unctrl.h",
-        .style = .{ .autoconf_at = ncurses.path("include/unctrl.h.in") },
-    }, .{
-        .NCURSES_MAJOR = ncurses_version.major,
-        .NCURSES_MINOR = ncurses_version.minor,
-        .NCURSES_SP_FUNCS = 1,
-    });
-    modncurses.addIncludePath(unctrl_h.getOutputDir());
-    libncurses.installConfigHeader(unctrl_h);
-
-    headers_step.dependOn(
-        &b.addInstallHeaderFile(unctrl_h.getOutputFile(), "unctrl.h").step,
-    );
-
-    {
-        const termcap_h = b.addConfigHeader(.{
-            .include_path = "termcap.h",
-            .style = .{ .autoconf_at = ncurses.path("include/termcap.h.in") },
-        }, .{
-            .NCURSES_MAJOR = ncurses_version.major,
-            .NCURSES_MINOR = ncurses_version.minor,
-            .NCURSES_OSPEED = "short",
-        });
-        modncurses.addIncludePath(termcap_h.getOutputDir());
-        libncurses.installConfigHeader(termcap_h);
-
-        headers_step.dependOn(
-            &b.addInstallHeaderFile(termcap_h.getOutputFile(), "termcap.h").step,
-        );
-    }
-
     const curses_tmp_h = b.addConfigHeader(.{
         .include_path = "curses_tmp.h",
         .style = .{ .autoconf_at = ncurses.path("include/curses.h.in") },
@@ -397,9 +236,249 @@ pub fn build(b: *Build) void {
         },
     };
     const curses_h = runConcatFiles(b, curses_h_parts, "curses.h");
+    modncurses.addIncludePath(curses_h.dirname());
+    libncurses.installHeader(curses_h, "curses.h");
     headers_step.dependOn(
         &b.addInstallHeaderFile(curses_h, "curses.h").step,
     );
+
+    headers_step.dependOn(
+        &b.addInstallHeaderFile(ncurses_cfg_h, "ncurses_cfg.h").step,
+    );
+
+    const unctrl_h = b.addConfigHeader(.{
+        .include_path = "unctrl.h",
+        .style = .{ .autoconf_at = ncurses.path("include/unctrl.h.in") },
+    }, .{
+        .NCURSES_MAJOR = ncurses_version.major,
+        .NCURSES_MINOR = ncurses_version.minor,
+        .NCURSES_SP_FUNCS = 1,
+    });
+    modncurses.addIncludePath(unctrl_h.getOutputDir());
+    libncurses.installConfigHeader(unctrl_h);
+
+    headers_step.dependOn(
+        &b.addInstallHeaderFile(unctrl_h.getOutputFile(), "unctrl.h").step,
+    );
+
+    {
+        const make_hash_exe = b.addExecutable(.{
+            .name = "make_hash",
+            .root_module = b.createModule(.{
+                .target = b.graph.host,
+                .optimize = .Debug,
+                .link_libc = true,
+            }),
+        });
+        make_hash_exe.root_module.addCSourceFile(.{
+            .file = ncurses.path("ncurses/tinfo/make_hash.c"),
+        });
+        make_hash_exe.root_module.addIncludePath(ncurses.path("ncurses"));
+        make_hash_exe.root_module.addIncludePath(ncurses.path("include"));
+        make_hash_exe.root_module.addIncludePath(dll_h.getOutputDir());
+        make_hash_exe.root_module.addIncludePath(ncurses_cfg_h.dirname());
+        make_hash_exe.root_module.addIncludePath(defs_h.dirname());
+        make_hash_exe.root_module.addIncludePath(hashsize_h.dirname());
+        make_hash_exe.root_module.addIncludePath(curses_h.dirname());
+        make_hash_exe.root_module.addIncludePath(unctrl_h.getOutputDir());
+
+        {
+            const user_hash = hash: {
+                const hash_run = b.addRunArtifact(make_hash_exe);
+                hash_run.setStdIn(.{ .lazy_path = caps_all });
+
+                hash_run.addArgs(&.{ "1", "user", b.fmt("{d}", .{@as(u1, if (options.bigstrings) 1 else 0)}) });
+
+                break :hash hash_run.captureStdOut(.{ .basename = "user_hash.txt" });
+            };
+
+            const userdefs_c = TemplateFileContents.run(
+                b,
+                b.path("src/comp_userdefs.c.in"),
+                "comp_userdefs.c",
+                .{
+                    .@"%USER_HASH%" = user_hash,
+                    .@"%USE_BIG_STRINGS%" = @as(u1, if (options.bigstrings) 1 else 0),
+                },
+            );
+
+            modncurses.addCSourceFile(.{
+                .flags = Sources.flags(options.target),
+                .file = userdefs_c,
+            });
+
+            headers_step.dependOn(
+                &b.addInstallHeaderFile(userdefs_c, "comp_userdefs.c").step,
+            );
+        }
+
+        {
+            const info_hash = hash: {
+                const hash_run = b.addRunArtifact(make_hash_exe);
+                hash_run.setStdIn(.{ .lazy_path = caps_all });
+
+                hash_run.addArgs(&.{ "1", "info", b.fmt("{d}", .{@as(u1, if (options.bigstrings) 1 else 0)}) });
+
+                break :hash hash_run.captureStdOut(.{ .basename = "info_hash.txt" });
+            };
+
+            const cap_hash = hash: {
+                const hash_run = b.addRunArtifact(make_hash_exe);
+                hash_run.setStdIn(.{ .lazy_path = caps_all });
+
+                hash_run.addArgs(&.{ "3", "cap", b.fmt("{d}", .{@as(u1, if (options.bigstrings) 1 else 0)}) });
+
+                break :hash hash_run.captureStdOut(.{ .basename = "cap_hash.txt" });
+            };
+
+            const capalias_table = AwkTemplate.run(
+                b,
+                .{
+                    .basename = "capalias_table.txt",
+                    .program_file = ncurses.path("ncurses/tinfo/MKcaptab.awk"),
+                    .input_files = caps_files,
+                    .variables = &.{
+                        bigstrings_awkvar,
+                        "tablename=capalias",
+                    },
+                },
+            );
+
+            const infoalias_table = AwkTemplate.run(
+                b,
+                .{
+                    .basename = "capalias_table.txt",
+                    .program_file = ncurses.path("ncurses/tinfo/MKcaptab.awk"),
+                    .input_files = caps_files,
+                    .variables = &.{
+                        bigstrings_awkvar,
+                        "tablename=infoalias",
+                    },
+                },
+            );
+
+            const captab_c = TemplateFileContents.run(
+                b,
+                b.path("src/comp_captab.c.in"),
+                "comp_captab.c",
+                .{
+                    .@"%INFO_HASH%" = info_hash,
+                    .@"%CAP_HASH%" = cap_hash,
+                    .@"%CAPALIAS_TABLE%" = capalias_table,
+                    .@"%INFOALIAS_TABLE%" = infoalias_table,
+                    .@"%USE_BIG_STRINGS%" = @as(u1, if (options.bigstrings) 1 else 0),
+                },
+            );
+
+            modncurses.addCSourceFile(.{
+                .flags = Sources.flags(options.target),
+                .file = captab_c,
+            });
+
+            headers_step.dependOn(
+                &b.addInstallHeaderFile(captab_c, "comp_captab.c").step,
+            );
+        }
+    }
+
+    modncurses.addCSourceFiles(.{
+        .root = b.path("src/c"),
+        .flags = Sources.flags(options.target),
+        .files = &.{
+            "comp_captab.c",
+        },
+    });
+
+    modncurses.addCSourceFile(.{
+        .file = AwkTemplate.run(
+            b,
+            .{
+                .basename = "unctrl.c",
+                .program_file = ncurses.path("ncurses/base/MKunctrl.awk"),
+                .variables = &.{bigstrings_awkvar},
+            },
+        ),
+        .flags = Sources.flags(options.target),
+    });
+
+    modncurses.addCSourceFile(.{
+        .file = AwkTemplate.run(b, .{
+            .basename = "codes.c",
+            .program_file = ncurses.path("ncurses/tinfo/MKcodes.awk"),
+            .input_files = caps_files,
+            .variables = &.{bigstrings_awkvar},
+        }),
+        .flags = Sources.flags(options.target),
+    });
+
+    modncurses.addIncludePath(ncurses.path("include"));
+    modncurses.addCMacro("BUILDING_NCURSES", "");
+    modncurses.addCMacro("_DEFAULT_SOURCE", "");
+    modncurses.addCMacro("_XOPEN_SOURCE", "600");
+    modncurses.addCMacro("HAVE_CONFIG_H", "1");
+    if (options.linkage == .static) {
+        modncurses.addCMacro("NCURSES_STATIC", "");
+    }
+
+    libncurses.installHeader(
+        ncurses.path("include/term_entry.h"),
+        "term_entry.h",
+    );
+    libncurses.installHeader(
+        ncurses.path("include/nc_alloc.h"),
+        "nc_alloc.h",
+    );
+
+    inline for (&.{
+        "cursesapp.h",
+        "cursesf.h",
+        "cursesm.h",
+        "cursesp.h",
+        "cursesw.h",
+        "cursslk.h",
+    }) |h| {
+        libncurses.installHeader(ncurses.path(b.pathJoin(&.{ "c++", h })), h);
+    }
+    switch (options.target.result.os.tag) {
+        .windows => {
+            libncurses.installHeader(
+                ncurses.path("include/win32_curses.h"),
+                "win32_curses.h",
+            );
+            libncurses.installHeader(
+                ncurses.path("include/nc_win32.h"),
+                "nc_win32.h",
+            );
+        },
+        else => {},
+    }
+
+    modncurses.addIncludePath(b.path("src/c"));
+
+    {
+        const parametrized_h = runMakeParametrizedH(b, caps_files);
+        modncurses.addIncludePath(parametrized_h.dirname());
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(parametrized_h, "parametrized.h").step,
+        );
+    }
+
+    {
+        const termcap_h = b.addConfigHeader(.{
+            .include_path = "termcap.h",
+            .style = .{ .autoconf_at = ncurses.path("include/termcap.h.in") },
+        }, .{
+            .NCURSES_MAJOR = ncurses_version.major,
+            .NCURSES_MINOR = ncurses_version.minor,
+            .NCURSES_OSPEED = "short",
+        });
+        modncurses.addIncludePath(termcap_h.getOutputDir());
+        libncurses.installConfigHeader(termcap_h);
+
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(termcap_h.getOutputFile(), "termcap.h").step,
+        );
+    }
 
     if (b.option(bool, "use_gen_libc", "") orelse false) {
         const awk_dep = b.dependency("awk", .{
@@ -460,12 +539,12 @@ pub fn build(b: *Build) void {
         );
 
         modncurses.addCSourceFile(.{
-            .file = runAwkTpl(
-                b,
-                ncurses.path("ncurses/base/MKkeyname.awk"),
-                &.{keys_list},
-                "lib_keyname.c",
-            ),
+            .file = AwkTemplate.run(b, .{
+                .basename = "lib_keyname.c",
+                .program_file = ncurses.path("ncurses/base/MKkeyname.awk"),
+                .input_files = &.{keys_list},
+                .variables = &.{bigstrings_awkvar},
+            }),
             .flags = Sources.flags(options.target),
         });
 
@@ -486,8 +565,6 @@ pub fn build(b: *Build) void {
 
     modncurses.addIncludePath(ncurses.path("include"));
     modncurses.addCMacro("BUILDING_NCURSES", "");
-    modncurses.addIncludePath(curses_h.dirname());
-    libncurses.installHeader(curses_h, "curses.h");
 
     {
         const demo_step = b.step("demo", "build demos");
@@ -561,11 +638,14 @@ pub fn build(b: *Build) void {
             "MKterm.h.awk",
         ).step);
 
-        const term_h = runAwkTpl(
+        const term_h = AwkTemplate.run(
             b,
-            mkterm_h,
-            caps_files,
-            "term.h",
+            .{
+                .basename = "term.h",
+                .program_file = mkterm_h,
+                .input_files = caps_files,
+                .variables = &.{bigstrings_awkvar},
+            },
         );
         modncurses.addIncludePath(term_h.dirname());
         libncurses.installHeader(term_h, "term.h");
@@ -574,12 +654,12 @@ pub fn build(b: *Build) void {
             "term.h",
         ).step);
 
-        const names_c = runAwkTpl(
-            b,
-            ncurses.path("ncurses/tinfo/MKnames.awk"),
-            caps_files,
-            "names.c",
-        );
+        const names_c = AwkTemplate.run(b, .{
+            .basename = "names.c",
+            .program_file = ncurses.path("ncurses/tinfo/MKnames.awk"),
+            .input_files = caps_files,
+            .variables = &.{bigstrings_awkvar},
+        });
         makekeys.addIncludePath(names_c.dirname());
         modncurses.addCSourceFile(.{
             .file = names_c,
@@ -597,23 +677,45 @@ pub fn build(b: *Build) void {
     b.step("fmt", "zig fmt").dependOn(&fmt.step);
 }
 
-/// runs awk prgram and captures stdout
-pub fn runAwkTpl(b: *Build, prog: LazyPath, defs: []const LazyPath, basename: []const u8) LazyPath {
-    const awk_dep = b.dependency("awk", .{
-        .target = b.graph.host,
-        .optimize = .ReleaseSmall,
-    });
-    const awk = b.addRunArtifact(awk_dep.artifact("awk"));
-    awk.addArg("-f");
-    awk.addFileArg(prog);
-    awk.addArg("bigstrings=1");
-    for (defs) |def| {
-        awk.addFileArg(def);
+pub const AwkTemplate = struct {
+    pub const RunOptions = struct {
+        program_file: LazyPath,
+        input_files: []const LazyPath = &.{},
+        variables: []const []const u8 = &.{},
+        basename: []const u8,
+    };
+    /// runs awk prgram and captures stdout
+    pub fn run(
+        b: *Build,
+        opt: RunOptions,
+    ) LazyPath {
+        const awk_dep = b.dependency("awk", .{
+            .target = b.graph.host,
+            .optimize = .ReleaseSmall,
+        });
+        const awk = b.addRunArtifact(awk_dep.artifact("awk"));
+        awk.addArg("-f");
+        awk.addFileArg(opt.program_file);
+        // awk.addArgs(&.{
+        //     "-v", b.fmt("bigstrings={d}", .{@as(u1, if (bigstrings) 1 else 0)}),
+        // });
+
+        for (opt.variables) |variable| {
+            awk.addArgs(&.{
+                "-v", variable,
+            });
+        }
+
+        if (opt.input_files.len > 0) {
+            for (opt.input_files) |input_file| {
+                awk.addFileArg(input_file);
+            }
+        } else {
+            awk.setStdIn(.{ .bytes = "" });
+        }
+        return awk.captureStdOut(.{ .basename = opt.basename });
     }
-    if (defs.len == 0) awk.setStdIn(.{ .bytes = "" });
-    const wf = b.addWriteFiles();
-    return wf.addCopyFile(awk.captureStdOut(.{}), basename);
-}
+};
 
 /// generates ncurses_def.h from ncurses_defs text file
 pub fn runMakeNCursesDef(b: *Build, src: LazyPath, basename: []const u8) LazyPath {
@@ -1220,7 +1322,6 @@ pub const Sources = struct {
             "lib_ttyflags.c",
             "lib_win32con.c",
             "lib_win32util.c",
-            // "make_hash.c",
             // "make_keys.c",
             "name_match.c",
             "obsolete.c",

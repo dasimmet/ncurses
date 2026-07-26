@@ -13,7 +13,7 @@
 #include <tic.h>
 
 #if NCURSES_XNAMES
-%USERDEFS_HASH%
+%USER_HASH%
 #define USERTABSIZE SIZEOF(user_names_data)
 
 #if %USE_BIG_STRINGS%
