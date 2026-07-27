@@ -1,5 +1,10 @@
 const std = @import("std");
 
+const usage =
+    \\usage: concat_files <output file path> [file://<input file>|string://<input string>] ...
+    \\concatenates multiple input files
+;
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -7,7 +12,12 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(arena);
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.assert(args.len >= 3);
+    if (!(args.len >= 3)) {
+        try std.Io.File.stdout().writeStreamingAll(io, usage);
+        std.log.err("not enough arguments. exected 3 or more, got {d}", .{args.len});
+        std.process.exit(1);
+    }
+
     const outpath = args[1];
     const inpaths = args[2..];
 

@@ -68,6 +68,15 @@ termcap_name: []const u8,
 termcap_value: ?u32,
 termcap_emit: bool,
 description: []const u8,
+
+pub const unparsable_lineheads = .{
+    "#",
+    " ",
+    "capalias",
+    "infoalias",
+    "used_by",
+    "userdef",
+};
 // Column 1: terminfo variable name
 // Column 2: terminfo capability name
 // Column 3: capability type (boolean, numeric, or string)
@@ -78,17 +87,8 @@ description: []const u8,
 //           translations, `-' otherwise
 // Column 8: capability description
 pub fn parse(line: []const u8) ?Capability {
-    inline for (&.{
-        "#",
-        "capalias",
-        "infoalias",
-        "used_by",
-        "userdef",
-    }) |prefix| {
-        if (std.mem.startsWith(u8, line, prefix)) {
-            return null;
-        }
-    }
+    if (should_skip_line(line)) return null;
+
     var field_iter = std.mem.tokenizeAny(
         u8,
         line,
@@ -179,6 +179,14 @@ pub fn parse(line: []const u8) ?Capability {
         return null;
     }
     return cap;
+}
+
+pub fn should_skip_line(line: []const u8) bool {
+    if (line.len == 0) return true;
+    inline for (unparsable_lineheads) |skip_str| {
+        if (std.mem.startsWith(u8, line, skip_str)) return true;
+    }
+    return false;
 }
 
 pub fn format(self: Capability, w: *std.Io.Writer) !void {

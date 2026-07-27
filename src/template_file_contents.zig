@@ -1,15 +1,17 @@
 const std = @import("std");
 
-// usage:
-// template_file_contents <template_filepath> <output_filepath> [<key_name> <value>]
-//
-// reads a <template_filename> and a list of pairs of
-// <key_name> and <value>,
-// then replaces every occurrence of <key_name> in the template
-// with:
-// - if value starts with "f:", read the file at the following path
-// - if it starts with b: use the following bytes literally
-// - otherwise error out
+const usage =
+    \\usage: template_file_contents <template_filepath> <output_filepath> [<key_name> <value>]
+    \\
+    \\reads a <template_filename> and a list of pairs of
+    \\<key_name> and <value>,
+    \\then replaces every occurrence of <key_name> in the template
+    \\with:
+    \\- if value starts with "f:", read the file at the following path
+    \\- if it starts with b: use the following bytes literally
+    \\- otherwise error out
+    \\
+;
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -18,8 +20,17 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(arena);
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.assert(args.len > 3);
-    std.debug.assert(args.len % 2 == 1); // we need args in pairs after arg 3
+    if (!(args.len >= 5)) {
+        try std.Io.File.stdout().writeStreamingAll(io, usage);
+        std.log.err("not enough arguments. exected 3 or more, got {d}", .{args.len});
+        std.process.exit(1);
+    }
+    if (!(args.len % 2 == 1)) {
+        try std.Io.File.stdout().writeStreamingAll(io, usage);
+        std.log.err("we need arguments in pairs. got {d}", .{args.len});
+        std.process.exit(1);
+    }
+
     const inpath = args[1];
     const outpath = args[2];
     const tpl_args = args[3..];

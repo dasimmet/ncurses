@@ -62,13 +62,13 @@ pub fn build(b: *Build) void {
         .optimize = b.standardOptimizeOption(.{}),
         .@"opaque" = !(b.option(bool, "no-opaque", "disable opaque support") orelse false),
         .widechar = !(b.option(bool, "no-widechar", "disable widechar support") orelse false),
-        .bigstrings = !(b.option(bool, "no-bigstrings", "disable widechar support") orelse false),
+        .bigstrings = !(b.option(bool, "no-bigstrings", "disable bigstring support") orelse false),
         .linkage = b.option(std.builtin.LinkMode, "linkage", "linkmode for the library") orelse .static,
     };
 
     const bigstrings_awkvar = b.fmt("bigstrings={d}", .{@as(u1, if (options.bigstrings) 1 else 0)});
 
-    const headers_step = b.step("headers", "install the zig generated headers");
+    const headers_step = b.step("headers", "install the zig generated c files for review");
 
     const ncurses = b.dependency("ncurses", .{});
     const modncurses = b.addModule("ncurses", .{
@@ -688,9 +688,6 @@ pub const AwkTemplate = struct {
         const awk = b.addRunArtifact(awk_dep.artifact("awk"));
         awk.addArg("-f");
         awk.addFileArg(opt.program_file);
-        // awk.addArgs(&.{
-        //     "-v", b.fmt("bigstrings={d}", .{@as(u1, if (bigstrings) 1 else 0)}),
-        // });
 
         for (opt.variables) |variable| {
             awk.addArgs(&.{
@@ -711,28 +708,20 @@ pub const AwkTemplate = struct {
 
 /// generates ncurses_def.h from ncurses_defs text file
 pub fn runMakeNCursesDef(b: *Build, src: LazyPath, basename: []const u8) LazyPath {
-    const exe = b.addExecutable(.{
-        .name = "MKncurses_def.sh",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_ncurses_def.zig"),
-            .target = b.graph.host,
-        }),
-    });
-    const run = b.addRunArtifact(exe);
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-ncurses-def");
+    run.setName("MKncurses_def.sh");
     run.addFileArg(src);
     return run.addOutputFileArg(basename);
 }
 
 /// generates key def headers from ncurses Caps files
 pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
-    const exe = b.addExecutable(.{
-        .name = "MKkeydefs.sh",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_key_defs.zig"),
-            .target = b.graph.host,
-        }),
-    });
-    const run = b.addRunArtifact(exe);
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-key-defs");
+    run.setName("MKkey_defs.sh");
     const out = run.addOutputFileArg(basename);
     for (src) |s| {
         run.addFileArg(s);
@@ -742,14 +731,10 @@ pub fn runMakeKeyDefs(b: *Build, src: []const LazyPath, basename: []const u8) La
 
 /// generates keys list from ncurses Caps files
 pub fn runMakeKeysList(b: *Build, src: []const LazyPath, basename: []const u8) LazyPath {
-    const exe = b.addExecutable(.{
-        .name = "MKkeys_list.sh",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_keys_list.zig"),
-            .target = b.graph.host,
-        }),
-    });
-    const run = b.addRunArtifact(exe);
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-keys-list");
+    run.setName("MKkeys_list.sh");
     const out = run.addOutputFileArg(basename);
     for (src) |s| {
         run.addFileArg(s);
@@ -761,14 +746,10 @@ pub fn runMakeKeysList(b: *Build, src: []const LazyPath, basename: []const u8) L
 /// replaces "./ncurses/tinfo/MKfallback.sh $(TERMINFO) $(TERMINFO_SRC) "$(TIC_PATH)" "$(INFOCMP_PATH)" $(FALLBACK_LIST)"
 /// /bin/sh -e ./tinfo/MKfallback.sh /usr/share/terminfo ../misc/terminfo.src "/usr/bin/tic" "/usr/bin/infocmp" screen linux vt100 xterm xterm-256color
 pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
-    const exe = b.addExecutable(.{
-        .name = "MKfallback.sh",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_fallback_c.zig"),
-            .target = b.graph.host,
-        }),
-    });
-    const run = b.addRunArtifact(exe);
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-fallback-c");
+    run.setName("MKfallback.sh");
     const out = run.addOutputFileArg("fallback.c");
     for (src) |s| {
         run.addFileArg(s);
@@ -781,14 +762,10 @@ pub fn runMakeFallbackC(b: *Build, src: []const LazyPath) LazyPath {
 /// CC="zig 0.15.1 cc -E -DHAVE_CONFIG_H -DBUILDING_NCURSES -I../ncurses -I. -I../include -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DNDEBUG"
 /// ./base/MKlib_gen.sh "$CC" "mawk" generated <../include/curses.h
 pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
-    const exe = b.addExecutable(.{
-        .name = "MKlib_gen.sh",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_lib_gen_c.zig"),
-            .target = b.graph.host,
-        }),
-    });
-    const run = b.addRunArtifact(exe);
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-lib-gen-c");
+    run.setName("MKlib_gen.sh");
     const out = run.addOutputFileArg("lib_gen.c");
     run.addFileArg(curses_h);
     run.addFileArg(awk);
@@ -814,38 +791,39 @@ pub fn runConcatFiles(b: *Build, src: []const LazyPath, basename: []const u8) La
 
 // generates hashsize.h by counting lines in the used caps files
 pub fn runMakeHashsizeH(b: *Build, src: []const LazyPath) LazyPath {
-    const make_hashsize_exe = b.addExecutable(.{
-        .name = "make_hashsize",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_hashsize.zig"),
-            .optimize = .Debug,
-            .target = b.graph.host,
-        }),
-    });
-    const run_make_hashisze = b.addRunArtifact(make_hashsize_exe);
-    const hashsize_h = run_make_hashisze.addOutputFileArg("hashsize.h");
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-hashsize");
+    run.setName("MKhashsize.sh");
+    const hashsize_h = run.addOutputFileArg("hashsize.h");
     for (src) |arg| {
-        run_make_hashisze.addFileArg(arg);
+        run.addFileArg(arg);
     }
     return hashsize_h;
 }
 
 // generates parametrized.h by reading lines in the used caps files
 pub fn runMakeParametrizedH(b: *Build, src: []const LazyPath) LazyPath {
-    const make_parametrized_exe = b.addExecutable(.{
-        .name = "make_parametrized",
+    const ncurses_util = ncursesUtil(b);
+    const run = b.addRunArtifact(ncurses_util);
+    run.addArg("make-parametrized");
+    run.setName("MKparametrized.sh");
+    const parametrized_h = run.addOutputFileArg("parametrized.h");
+    for (src) |arg| {
+        run.addFileArg(arg);
+    }
+    return parametrized_h;
+}
+
+pub fn ncursesUtil(b: *Build) *Build.Step.Compile {
+    return b.addExecutable(.{
+        .name = "ncurses-util",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/make_parametrized.zig"),
+            .root_source_file = b.path("src/ncurses-util.zig"),
             .optimize = .Debug,
             .target = b.graph.host,
         }),
     });
-    const run_make_parametrized = b.addRunArtifact(make_parametrized_exe);
-    const parametrized_h = run_make_parametrized.addOutputFileArg("parametrized.h");
-    for (src) |arg| {
-        run_make_parametrized.addFileArg(arg);
-    }
-    return parametrized_h;
 }
 
 pub const TemplateFileContents = struct {

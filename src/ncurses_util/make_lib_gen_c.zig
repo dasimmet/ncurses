@@ -1,16 +1,16 @@
 const std = @import("std");
 
-pub fn main(init: std.process.Init) !void {
-    // const gpa = init.gpa;
+// zig port of "MKlib_gen.sh"
+
+pub fn main(init: std.process.Init, arg0: []const u8, args: []const []const u8) !void {
+    _ = arg0;
     const io = init.io;
-    const arena = init.arena.allocator();
-    const args = try init.minimal.args.toSlice(arena);
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.assert(args.len >= 4);
-    const outpath = args[1];
-    const curses_h = args[2];
-    const awk = args[3];
+    std.debug.assert(args.len >= 3);
+    const outpath = args[0];
+    const curses_h = args[1];
+    const awk = args[2];
 
     _ = curses_h;
     _ = awk;

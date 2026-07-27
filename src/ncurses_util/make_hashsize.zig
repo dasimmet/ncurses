@@ -1,14 +1,14 @@
 const std = @import("std");
+const Capability = @import("Capability.zig");
 
-pub fn main(init: std.process.Init) !void {
-    // const gpa = init.gpa;
+pub fn main(init: std.process.Init, arg0: []const u8, args: []const []const u8) !void {
+    _ = arg0;
     const io = init.io;
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.assert(args.len >= 2);
-    const outpath = args[1];
-    const inpaths = args[2..];
+    std.debug.assert(args.len >= 1);
+    const outpath = args[0];
+    const inpaths = args[1..];
 
     const outfile = try cwd.createFile(io, outpath, .{});
     defer outfile.close(io);
@@ -27,17 +27,7 @@ pub fn main(init: std.process.Init) !void {
         var reader = fd.reader(io, &read_buf);
 
         line: while (try reader.interface.takeDelimiter('\n')) |line| {
-            if (line.len == 0) continue;
-            inline for (&.{
-                "#",
-                " ",
-                "capalias",
-                "infoalias",
-                "userdef",
-                "used_by",
-            }) |skip_str| {
-                if (std.mem.startsWith(u8, line, skip_str)) continue :line;
-            }
+            if (Capability.should_skip_line(line)) continue :line;
             hashsize += 1;
         }
     }

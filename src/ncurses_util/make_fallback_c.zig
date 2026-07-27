@@ -1,13 +1,12 @@
 const std = @import("std");
 
-pub fn main(init: std.process.Init) !void {
-    // const gpa = init.gpa;
+pub fn main(init: std.process.Init, arg0: []const u8, args: []const []const u8) !void {
+    _ = arg0;
     const io = init.io;
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
     const cwd = std.Io.Dir.cwd();
 
-    std.debug.assert(args.len >= 2);
-    const outpath = args[1];
+    std.debug.assert(args.len >= 1);
+    const outpath = args[0];
     // const inpaths = args[2..];
 
     const outfile = try cwd.createFile(io, outpath, .{});
