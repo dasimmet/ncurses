@@ -483,6 +483,14 @@ pub fn build(b: *Build) void {
             .file = lib_gen,
             .flags = Sources.flags(options.target),
         });
+
+        headers_step.dependOn(
+            &b.addInstallHeaderFile(lib_gen, "lib_gen.c").step,
+        );
+
+        const usf = b.addUpdateSourceFiles();
+        usf.addCopyFileToSource(lib_gen, "src/c/lib_gen.c");
+        headers_step.dependOn(&usf.step);
     } else {
         modncurses.addCSourceFiles(.{
             .root = b.path("src/c"),
@@ -769,6 +777,9 @@ pub fn runMakeLibGenC(b: *Build, curses_h: LazyPath, awk: LazyPath) LazyPath {
     const out = run.addOutputFileArg("lib_gen.c");
     run.addFileArg(curses_h);
     run.addFileArg(awk);
+    run.addFileArg(.{ .cwd_relative = b.graph.zig_exe });
+    run.addArgs(&.{ "c++", "-DNCURSES_WATTR_MACROS", "-DNCURSES_INTERNALS", "-P" });
+    // TODO: add includes
     return out;
 }
 

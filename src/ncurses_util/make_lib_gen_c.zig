@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// zig port of "MKlib_gen.sh"
+// zig port of zig-pkg/*/ncurses/base/MKlib_gen.sh
 
 pub fn main(init: std.process.Init, arg0: []const u8, args: []const []const u8) !void {
     _ = arg0;
@@ -11,9 +11,11 @@ pub fn main(init: std.process.Init, arg0: []const u8, args: []const []const u8) 
     const outpath = args[0];
     const curses_h = args[1];
     const awk = args[2];
+    const zigcpp = args[3..];
 
     _ = curses_h;
     _ = awk;
+    _ = zigcpp;
 
     const outfile = try cwd.createFile(io, outpath, .{});
     defer outfile.close(io);
