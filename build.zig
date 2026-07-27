@@ -381,14 +381,6 @@ pub fn build(b: *Build) void {
         }
     }
 
-    modncurses.addCSourceFiles(.{
-        .root = b.path("src/c"),
-        .flags = Sources.flags(options.target),
-        .files = &.{
-            "comp_captab.c",
-        },
-    });
-
     modncurses.addCSourceFile(.{
         .file = AwkTemplate.run(
             b,
